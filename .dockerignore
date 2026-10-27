@@ -1,0 +1,45 @@
+# Nur Code, requirements.txt und docker/ gehören ins Image.
+.venv/
+venv/
+env/
+**/__pycache__/
+**/*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+tests/
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# Echte Nutzerdaten – liegen im Container unter /config, /ausgabe, /vorlagen
+config.yaml
+config.yaml.*
+einstellungen.yaml
+einstellungen.yaml.*
+stammdaten*.yaml
+stammdaten*.yaml.*
+stammdaten*.json
+status.json
+status.json.*
+helfer.yaml
+*.bak
+*.bak?
+BeispielEtiketten/
+**/.backup/
+Labeldaten/
+*.lbx
+*.csv
+*.log
+
+# Windows-Startskripte
+*.bat
+# … außer den Helfer-Skripten: sie kommen in den Helfer-Download (GET /api/helfer/download)
+!helfer.bat
+!helfer-autostart.bat
+Dockerfile
+docker-compose.yml
+docker/labeltool.xml

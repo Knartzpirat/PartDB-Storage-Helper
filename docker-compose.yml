@@ -1,0 +1,22 @@
+# Labeltool auf Unraid/Linux. Image wird lokal gebaut (kein Registry-Image):
+#   docker compose up -d --build
+services:
+  labeltool:
+    build:
+      context: .
+      args:
+        PUID: "99"     # Unraid: nobody
+        PGID: "100"    # Unraid: users
+    image: labeltool:latest
+    container_name: labeltool
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    environment:
+      TZ: Europe/Berlin
+      PARTDB_URL: ""     # optional Startwert, z. B. http://192.168.0.100:4444 (später im Reiter Einstellungen änderbar)
+      PARTDB_TOKEN: ""   # optional Startwert
+    volumes:
+      - /mnt/user/appdata/labeltool/config:/config
+      - /mnt/user/appdata/labeltool/ausgabe:/ausgabe
+      - /mnt/user/appdata/labeltool/vorlagen:/vorlagen

@@ -1,0 +1,33 @@
+# Druck-Helfer für Windows (python -m labeltool.helfer helfer.yaml bzw. helfer.bat)
+# Normalerweise schreibt der Einrichtungs-Assistent diese Datei (helfer.bat bzw. "helfer.bat einrichten").
+# Von Hand: nach helfer.yaml kopieren und ausfüllen. Der Helfer verbindet sich selbst mit dem
+# Server – am PC muss kein Port geöffnet werden. Änderungen wirken beim nächsten Verbindungsversuch.
+
+# Adresse des Labeltool-Servers (wie im Browser). http wird automatisch zu ws.
+server: "http://unraid:8765"
+
+# Helfer-Token: im Labeltool unter Einstellungen > Helfer (steckt auch im Helfer-Download).
+token: ""
+
+# Quelle der .lbx-Vorlagen auf diesem PC. Der Server gleicht seinen Vorlagenordner damit ab
+# (neue/geänderte Dateien vom PC übernehmen, auf dem PC gelöschte nach .geloescht verschieben).
+# Leer = alte Arbeitsweise: Vorlagen liegen nur auf dem Server.
+vorlagen_ordner: 'C:\Users\Name\Documents\Labeltool-Vorlagen'
+
+# Modell des Etikettendruckers (Liste: python -m labeltool.ptouch_modelle)
+drucker_modell: "PT-P710BT"
+
+# Windows-Druckername. Leer = passend zum Modell automatisch suchen (z. B. "Brother PT-P710BT").
+drucker: ""
+
+# Nur Info für den Assistenten: Verknüpfung im Autostart-Ordner angelegt?
+autostart: true
+
+# Alt (vor dem Vorlagen-Abgleich): Server-Pfade -> Windows-Pfade. Wird nicht mehr benötigt.
+# pfade:
+#   /ausgabe: 'Z:\Labeltool\Labeldaten'
+#   /vorlagen: 'Z:\Labeltool\BeispielEtiketten'
+
+# Optional: Ordner für zwischengespeicherte Vorlagen (relativ zu dieser Datei) und Status-Intervall.
+# cache_ordner: ".helfer-cache"
+# status_intervall: 10

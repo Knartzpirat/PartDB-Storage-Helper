@@ -1,0 +1,59 @@
+# --- Zugangsdaten (NIE einchecken) --------------------------------------------
+# Part-DB-URL + API-Token, Helfer-Token
+config.yaml
+config.yaml.*
+# … außer der Vorlage fürs Docker-Image (ohne Zugangsdaten)
+!docker/config.yaml
+einstellungen.yaml
+einstellungen.yaml.*
+helfer.yaml
+helfer.vorgabe.yaml
+*.tmp
+
+# --- Laufzeitdaten des Tools ---------------------------------------------------
+# Stammdaten, Rückgängig-Verlauf, Warteschlangen, Abgleich-Stand
+stammdaten*.yaml
+stammdaten*.yaml.*
+stammdaten*.json
+status.json
+vorlagen-abgleich.json
+*.bak
+*.bak?
+
+# Backups/gelöschte Vorlagen, die das Tool im Vorlagenordner anlegt
+**/.backup/
+**/.geloescht/
+
+# Ausgabe (CSV für den P-touch Editor, verknüpfte Vorlagen-Kopien, Beispiel-CSVs)
+Labeldaten/
+*.csv
+
+# Druck-Helfer: Vorlagen-Cache, entpackter Download
+.helfer-cache/
+Labeltool-Helfer*.zip
+
+# --- Python --------------------------------------------------------------------
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+build/
+dist/
+
+# --- Editor / Betriebssystem --------------------------------------------------
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# --- Logs ---------------------------------------------------------------------
+*.log

@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<!-- Unraid-Template: nach /boot/config/plugins/dockerMan/templates-user/my-labeltool.xml kopieren.
+     Das Image labeltool:latest muss vorher lokal gebaut werden (siehe README, "Betrieb im Docker (Unraid)"). -->
+<Container version="2">
+  <Name>labeltool</Name>
+  <Repository>labeltool:latest</Repository>
+  <Registry/>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <Support/>
+  <Project/>
+  <Overview>Part-DB Labeltool: Lagerboxen in Part-DB anlegen und Labels für den Brother PT-P710BT erzeugen. Gedruckt wird über den Druck-Helfer auf einem Windows-PC. Keine Anmeldung – nur im LAN betreiben!</Overview>
+  <Category>Tools:</Category>
+  <WebUI>http://[IP]:[PORT:8765]/</WebUI>
+  <TemplateURL/>
+  <Icon/>
+  <ExtraParams/>
+  <PostArgs/>
+  <CPUset/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires>Image lokal bauen: docker build -t labeltool:latest /mnt/user/appdata/labeltool/src</Requires>
+  <Config Name="Web-UI Port" Target="8765" Default="8765" Mode="tcp" Description="Port der Weboberfläche und des Druck-Helfers" Type="Port" Display="always" Required="true" Mask="false">8765</Config>
+  <Config Name="Konfiguration" Target="/config" Default="/mnt/user/appdata/labeltool/config" Mode="rw" Description="config.yaml, einstellungen.yaml (enthält Tokens!), stammdaten.yaml, status.json" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/labeltool/config</Config>
+  <Config Name="Ausgabe (CSV)" Target="/ausgabe" Default="/mnt/user/appdata/labeltool/ausgabe" Mode="rw" Description="CSV-Dateien für den P-touch Editor" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/labeltool/ausgabe</Config>
+  <Config Name="Vorlagen (.lbx)" Target="/vorlagen" Default="/mnt/user/appdata/labeltool/vorlagen" Mode="rw" Description="P-touch-Vorlagen (.lbx)" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/labeltool/vorlagen</Config>
+  <Config Name="PARTDB_URL" Target="PARTDB_URL" Default="" Mode="" Description="Optionaler Startwert, z. B. http://192.168.0.100:4444 (ohne /api). Später im Reiter Einstellungen änderbar." Type="Variable" Display="always" Required="false" Mask="false"/>
+  <Config Name="PARTDB_TOKEN" Target="PARTDB_TOKEN" Default="" Mode="" Description="Optionaler Startwert für das Part-DB-API-Token" Type="Variable" Display="always" Required="false" Mask="true"/>
+  <Config Name="TZ" Target="TZ" Default="Europe/Berlin" Mode="" Description="Zeitzone" Type="Variable" Display="advanced" Required="false" Mask="false">Europe/Berlin</Config>
+</Container>

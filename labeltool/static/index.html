@@ -1,0 +1,1487 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lagerbox Labels</title>
+<style>
+  :root {
+    --bg: #f4f3ef; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6a65;
+    --line: #dddad2; --accent: #2f5d50; --accent-ink: #ffffff; --warn: #9a5b00; --warn-bg: #fff4e0;
+    --err: #a1261b; --err-bg: #fde8e5; --ok-bg: #e7f2ec; --stage: #e2e0d9; --ok: #2b6b45;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161614; --panel: #201f1d; --ink: #ecebe6; --muted: #9c9a93;
+      --line: #34332f; --accent: #7fb8a4; --accent-ink: #10201b; --warn: #f0b45a; --warn-bg: #3a2c14;
+      --err: #ff8f84; --err-bg: #3b1915; --ok-bg: #1b2e26; --stage: #2e2d2a; --ok: #8fd3a8;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 system-ui, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); }
+  header { padding: 18px 24px 0; display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  header h1 { font-size: 20px; margin: 0; letter-spacing: -.01em; }
+  header .src { color: var(--muted); font-size: 13px; min-width: 0; overflow-wrap: anywhere; }
+  /* Status-Chips: Farbe + Text (nicht nur Farbe), Details im Tooltip */
+  .status { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; align-self: center; min-width: 0; max-width: 100%; }
+  .stchip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 12px; max-width: 100%;
+            border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: inherit; font-size: 13px; cursor: pointer; }
+  .stchip span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .stchip .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+  .stchip.ok { background: var(--ok-bg); border-color: var(--ok); } .stchip.ok .dot { background: var(--ok); }
+  .stchip.warn { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); } .stchip.warn .dot { background: var(--warn); }
+  .stchip.err { background: var(--err-bg); color: var(--err); border-color: var(--err); } .stchip.err .dot { background: var(--err); }
+  .stchip:focus-visible, nav button:focus-visible, .btn:focus-visible, .check input:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* Einstellungen */
+  .check { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: 14px; margin: 0; cursor: pointer; }
+  .check input { width: auto; margin: 0; flex: none; }
+  .checks { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+  .pwwrap { display: flex; gap: 6px; }
+  .pwwrap input { flex: 1; min-width: 0; }
+  .pwwrap .btn { padding: 6px 10px; white-space: nowrap; }
+  .res { font-size: 13px; overflow-wrap: anywhere; min-width: 0; }
+  .res.ok { color: var(--ok); } .res.err { color: var(--err); }
+  .kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; font-size: 14px; margin: 10px 0 0; }
+  .kv dt { color: var(--muted); } .kv dd { margin: 0; overflow-wrap: anywhere; }
+  .secret { background: var(--bg); border-radius: 8px; padding: 12px; margin-top: 12px; border: 1px solid var(--accent); }
+  .secret[hidden] { display: none; }
+  .secret pre { margin: 6px 0 0; padding: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+                overflow-x: auto; font: 13px/1.5 ui-monospace, Consolas, monospace; white-space: pre; }
+  .secret input { font-family: ui-monospace, Consolas, monospace; background: var(--panel); }
+  [tabindex="-1"]:focus { outline: none; }
+  nav { display: flex; gap: 4px; padding: 14px 24px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  nav button { background: none; border: 0; padding: 10px 14px; font: inherit; color: var(--muted);
+               border-bottom: 2px solid transparent; cursor: pointer; }
+  nav button.active { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+  nav .count { display: inline-block; min-width: 20px; padding: 0 6px; margin-left: 6px; border-radius: 10px;
+               background: var(--line); font-size: 12px; text-align: center; }
+  main { padding: 20px 24px 60px; max-width: 1100px; }
+  section { display: none; } section.active { display: block; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; margin-bottom: 16px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  select, input { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px;
+                  background: var(--bg); color: var(--ink); font: inherit; }
+  .btn { padding: 9px 16px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel);
+         color: var(--ink); font: inherit; cursor: pointer; }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  a.btn { display: inline-block; text-decoration: none; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
+  .swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: -2px;
+            border: 1px solid rgba(0,0,0,.2); margin-right: 6px; }
+  .colorcall { display: flex; align-items: center; gap: 14px; padding: 14px; border-radius: 8px; background: var(--bg); margin-top: 14px; }
+  .colorcall .big { width: 44px; height: 44px; border-radius: 8px; border: 1px solid rgba(0,0,0,.2); flex: none; }
+  .colorcall strong { font-size: 17px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 13px; }
+  td.mono, .mono { font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
+  .msg { padding: 10px 14px; border-radius: 6px; margin-top: 12px; display: none; white-space: pre-wrap; }
+  .msg.ok { display: block; background: var(--ok-bg); }
+  .msg.err { display: block; background: var(--err-bg); color: var(--err); }
+  .warn { color: var(--warn); background: var(--warn-bg); padding: 4px 8px; border-radius: 4px; font-size: 13px; margin-top: 6px; }
+  .label24 { display: grid; gap: 2px; margin-top: 8px; }
+  .slot { border: 1px dashed var(--line); border-radius: 4px; padding: 4px 6px; font-size: 13px; min-height: 42px; }
+  .slot small { color: var(--muted); display: block; }
+  .slot.tag { border-style: solid; border-color: var(--accent); }
+  .card { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+  .card h3 { margin: 0; font-size: 15px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .steps { margin: 8px 0 0; padding-left: 20px; color: var(--muted); font-size: 13px; }
+  .undobar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 14px; border-radius: 8px;
+             background: var(--warn-bg); color: var(--warn); margin-bottom: 16px; }
+  .undobar[hidden] { display: none; }
+  .undobar .btn { color: var(--ink); }
+  .panel h2 { font-size: 16px; margin: 0 0 4px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .panel h2 .btn { margin-left: auto; }
+  td input, td select { padding: 5px 7px; min-width: 60px; }
+  td input[type=color] { padding: 1px; width: 42px; height: 32px; }
+  td.actions { white-space: nowrap; text-align: right; }
+  td.actions .btn { padding: 5px 10px; }
+  .btn.danger { background: var(--err-bg); color: var(--err); border-color: var(--err); }
+  tr.confirm td { background: var(--err-bg); }
+  .tablewrap { overflow-x: auto; }
+  .hexedit { display: flex; gap: 6px; align-items: center; }
+  .hexedit input[type=text] { width: 90px; font-family: ui-monospace, Consolas, monospace; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  /* Label-Vorschau: weißes Label auf neutraler Fläche, in hell und dunkel gut sichtbar */
+  .labelstage { display: flex; flex-direction: column; align-items: center; gap: 10px; background: var(--stage);
+                border-radius: 8px; padding: 14px; margin-top: 10px; min-width: 0; }
+  .labelstage[hidden] { display: none; }
+  .labelstage.big { min-height: 110px; padding: 18px 16px 22px; justify-content: center; }
+  .labelstage.loading .paper { opacity: .55; }
+  .labelstage .warn { align-self: stretch; margin: 0; }
+  .paper { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.3); max-width: 100%; line-height: 0; }
+  .paper img { display: block; max-width: 100%; height: auto; background: #fff; }
+  .pvbadge { align-self: flex-start; font-size: 12px; padding: 1px 8px; border-radius: 10px; background: var(--ok-bg); color: var(--ink); }
+  .pvbadge.sketch { background: var(--warn-bg); color: var(--warn); }
+  tr.pvrow td { background: var(--bg); }
+  /* Vorlagen */
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .chip { display: inline-block; padding: 1px 8px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line);
+          font-size: 12px; overflow-wrap: anywhere; }
+  .chip.mono { font-size: 12px; }
+  .chip.band { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .tplhead { display: flex; gap: 12px; align-items: flex-start; }
+  .tplhead .tplinfo { flex: 1; min-width: 0; }
+  .tplhead h3 .mono { overflow-wrap: anywhere; }
+  .card.open { border-color: var(--accent); }
+  .card.fresh { box-shadow: 0 0 0 3px var(--ok-bg); }
+  .tplwork { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .tplwork[hidden] { display: none; }
+  .tplwork h4 { font-size: 14px; margin: 16px 0 8px; }
+  .tplfields { display: grid; grid-template-columns: minmax(100px, max-content) minmax(0, 1fr); gap: 6px 12px; align-items: center; }
+  .tplfields label { margin: 0; overflow-wrap: anywhere; }
+  .tplfields textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px;
+                        background: var(--bg); color: var(--ink); font: inherit; resize: vertical; }
+  .copyform { background: var(--bg); border-radius: 8px; padding: 12px; margin-top: 12px; }
+  .copyform input, .copyform select { background: var(--panel); }
+  .copyform[hidden] { display: none; }
+  @media (max-width: 600px) { main, header, nav { padding-left: 16px; padding-right: 16px; } }
+  @media (max-width: 480px) {
+    .status { margin-left: 0; }
+    .tplfields { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+    .tplfields input, .tplfields textarea { margin-bottom: 6px; }
+    .tplhead { flex-direction: column; }
+    .labelstage { padding: 10px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Lagerbox Labels</h1>
+  <span class="src" id="src"></span>
+  <div class="status" id="status" aria-label="Verbindungsstatus">
+    <button type="button" class="stchip" id="st-partdb" data-goto="set-partdb"><span class="dot" aria-hidden="true"></span><span>Part-DB: …</span></button>
+    <button type="button" class="stchip" id="st-helfer" data-goto="set-helfer"><span class="dot" aria-hidden="true"></span><span>Helfer: …</span></button>
+    <button type="button" class="stchip" id="st-drucker" data-goto="set-druck"><span class="dot" aria-hidden="true"></span><span>Drucker: …</span></button>
+  </div>
+</header>
+<nav>
+  <button data-tab="new" class="active">Neue Box</button>
+  <button data-tab="names">Box-Labels 24 mm <span class="count" id="c-names">–</span></button>
+  <button data-tab="content">Bauteil-Labels 12 mm <span class="count" id="c-content">–</span></button>
+  <button data-tab="boxes">Alle Boxen</button>
+  <button data-tab="tpl">Vorlagen</button>
+  <button data-tab="master">Stammdaten</button>
+  <button data-tab="settings">Einstellungen</button>
+</nav>
+<main>
+  <!-- Neue Box -->
+  <section id="tab-new" class="active">
+    <div class="panel">
+      <div class="grid">
+        <div><label for="f-abbr">Inhalt</label><select id="f-abbr"></select></div>
+        <div><label for="f-type">Lagerart</label><select id="f-type"></select></div>
+        <div><label for="f-comp">Abteile</label><input id="f-comp" type="number" min="1" max="99" value="1"><div class="hint" id="h-comp"></div></div>
+        <div><label for="f-count">Anzahl Boxen</label><input id="f-count" type="number" min="1" max="50" value="1"></div>
+        <div><label for="f-color">Boxfarbe</label><select id="f-color"></select></div>
+      </div>
+      <div class="colorcall">
+        <span class="big" id="p-swatch"></span>
+        <div><strong id="p-color">–</strong><div class="muted">Neue Namen: <span class="mono" id="p-names">–</span></div></div>
+      </div>
+      <div class="row">
+        <button class="btn primary" id="b-create">In Part-DB anlegen</button>
+      </div>
+      <div class="msg" id="m-new"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Neue Boxen ohne Box-Label <span class="count" id="c-new-queue">0</span></h2>
+      <p class="muted" style="margin:0 0 8px">Erst alle Boxen anlegen, dann einmal drucken und die Labels direkt auf die Boxen kleben.</p>
+      <div class="tablewrap"><table><thead><tr><th>Name</th><th>Barcode</th><th>Inhalt</th><th>Boxfarbe</th><th>Lagerart</th><th>Abteile</th><th></th></tr></thead>
+        <tbody id="t-new-queue"></tbody></table></div>
+      <div class="row">
+        <button class="btn primary" data-direct-names hidden>Direkt drucken (24 mm)</button>
+        <button class="btn primary" data-print-names>Box-Labels drucken (24 mm)</button>
+        <button class="btn" data-names-done disabled>Gedruckt ✓</button>
+        <span class="muted" data-print-status></span>
+      </div>
+      <div class="msg" id="m-new-queue"></div>
+    </div>
+  </section>
+
+  <!-- Box-Labels 24 mm -->
+  <section id="tab-names">
+    <div class="panel">
+      <div class="tablewrap"><table><thead><tr><th>Name</th><th>Barcode</th><th>Inhalt</th><th>Boxfarbe</th><th>Lagerart</th><th></th></tr></thead>
+        <tbody id="t-names"></tbody></table></div>
+      <div class="row">
+        <button class="btn primary" data-direct-names hidden>Direkt drucken (24 mm)</button>
+        <button class="btn primary" data-print-names>Box-Labels drucken (24 mm)</button>
+        <button class="btn" data-names-done disabled>Gedruckt ✓</button>
+        <span class="muted" data-print-status></span>
+        <button class="btn" data-open data-desk>Ordner öffnen</button>
+      </div>
+      <ol class="steps">
+        <li>„Drucken“ schreibt die CSV und öffnet die Box-Label-Vorlage im P-touch Editor, schon mit der CSV verknüpft.</li>
+        <li>Dort alle Datensätze drucken, danach hier „Gedruckt“ bestätigen.</li>
+      </ol>
+      <div class="msg" id="m-names"></div>
+    </div>
+  </section>
+
+  <!-- Bauteil-Labels 12 mm -->
+  <section id="tab-content">
+    <div class="panel">
+      <div class="row" style="margin-top:0">
+        <button class="btn" id="b-content-reload">Neu laden</button>
+        <button class="btn primary" id="b-content-direct" hidden>Direkt drucken (12 mm)</button>
+        <button class="btn primary" id="b-content-export">CSVs schreiben &amp; Vorlagen anzeigen</button>
+        <button class="btn" id="b-content-done" disabled>Gedruckt – Tags entfernen</button>
+        <button class="btn" data-open data-desk>Ordner öffnen</button>
+        <span class="muted" data-print-status></span>
+      </div>
+      <p class="muted">Boxen mit mindestens einem Bauteil mit Tag <span class="mono" id="tagname"></span>. Auf dem Label stehen alle Bauteile der Box; umrandete Felder sind die getaggten.</p>
+      <div class="msg" id="m-content"></div>
+      <div id="content-files"></div>
+      <div id="content-list"></div>
+    </div>
+  </section>
+
+  <!-- Alle Boxen -->
+  <section id="tab-boxes">
+    <div class="panel">
+      <div class="grid"><div><label for="f-filter">Filter</label><input id="f-filter" placeholder="Name, Inhalt, Boxfarbe …"></div></div>
+      <div class="tablewrap"><table style="margin-top:12px"><thead><tr><th>Name</th><th>Barcode</th><th>Inhalt</th><th>Boxfarbe</th><th>Lagerart</th><th>Abteile</th><th></th></tr></thead>
+        <tbody id="t-boxes"></tbody></table></div>
+      <div class="msg" id="m-boxes"></div>
+    </div>
+  </section>
+
+  <!-- Vorlagen -->
+  <section id="tab-tpl">
+    <div class="panel">
+      <h2>P-touch-Vorlagen <span class="muted">Vorschau mit Beispieldaten, Bearbeiten im P-touch Editor</span>
+        <button class="btn" id="b-tpl-reload">Neu laden</button></h2>
+      <p class="muted" style="margin:0">Vorlagenordner: <span class="mono" id="tpl-folder">–</span><br><span id="tpl-source" style="display:none"></span><span id="tpl-mode"></span></p>
+      <div class="msg" id="m-tpl"></div>
+      <div id="tpl-list" style="margin-top:14px"></div>
+    </div>
+  </section>
+
+  <!-- Stammdaten -->
+  <section id="tab-master">
+    <div class="undobar" id="undobar" hidden>
+      <span>Letzte Änderung: <strong id="undo-text"></strong></span>
+      <button class="btn" id="b-undo">↶ Rückgängig</button>
+      <span class="muted" id="undo-count"></span>
+    </div>
+    <div class="msg" id="m-master" style="margin:0 0 16px"></div>
+
+    <div class="panel">
+      <h2>Boxfarben <span class="muted">Feste Palette – jede Farbe hat überall dieselbe Anzeige</span>
+        <button class="btn primary" id="b-color-new">+ Neue Boxfarbe</button></h2>
+      <div class="tablewrap"><table><thead><tr><th>Boxfarbe</th><th>Anzeige (Hex)</th><th>Genutzt von</th><th></th></tr></thead>
+        <tbody id="t-colors"></tbody></table></div>
+      <p class="muted">Umbenennen ändert die Farbe bei allen Inhalten mit. Eine Farbe, die noch genutzt wird, lässt sich nicht löschen.</p>
+    </div>
+
+    <div class="panel">
+      <h2>Inhalte <span class="muted">Kürzel steht im Boxnamen, Boxfarbe aus der Palette</span>
+        <button class="btn primary" id="b-cat-new">+ Neuer Inhalt</button></h2>
+      <div class="tablewrap"><table><thead><tr><th>Kürzel</th><th>Name</th><th>Boxfarbe</th><th></th></tr></thead>
+        <tbody id="t-cats"></tbody></table></div>
+    </div>
+
+    <div class="panel">
+      <h2>Lagerarten <span class="muted">Abteile werden bei „Neue Box“ automatisch übernommen</span>
+        <button class="btn primary" id="b-type-new">+ Neue Lagerart</button></h2>
+      <div class="tablewrap"><table><thead><tr><th>Name</th><th>Abteile</th><th>P-touch-Vorlage</th><th>CSV-Datei</th><th></th></tr></thead>
+        <tbody id="t-types"></tbody></table></div>
+      <p class="muted">Abteile = Anzahl Bauteile auf dem 12-mm-Label. Vorlagen kommen aus <span class="mono" id="tpl-dir"></span>.
+        Leere CSV-Datei = <span class="mono">Inhalt_&lt;Name&gt;.csv</span>. Umbenennen ändert keine bestehenden Boxen in Part-DB.</p>
+    </div>
+  </section>
+
+  <!-- Einstellungen -->
+  <section id="tab-settings">
+    <div class="msg" id="m-settings" style="margin:0 0 16px"></div>
+
+    <form class="panel" id="set-partdb" tabindex="-1" autocomplete="off">
+      <h2>Part-DB <span class="muted">Verbindung zur Bauteil-Datenbank</span></h2>
+      <div class="grid">
+        <div><label for="s-url">URL</label><input id="s-url" type="url" inputmode="url" placeholder="http://192.168.0.100:4444" spellcheck="false"></div>
+        <div><label for="s-token">API-Token ändern</label>
+          <div class="pwwrap"><input id="s-token" type="password" autocomplete="new-password" spellcheck="false" aria-describedby="s-token-hint">
+            <button type="button" class="btn" id="s-token-show" aria-pressed="false" aria-controls="s-token">Anzeigen</button></div>
+          <div class="hint" id="s-token-hint"></div></div>
+      </div>
+      <div class="row"><label class="check"><input type="checkbox" id="s-ssl"> SSL-Zertifikat prüfen</label></div>
+      <div class="row">
+        <button type="button" class="btn" id="s-pd-test">Verbindung testen</button>
+        <button type="submit" class="btn primary" id="s-pd-save">Speichern</button>
+        <button type="button" class="btn" id="s-pd-force" hidden>Ohne Test speichern</button>
+        <span class="res" id="s-pd-res" role="status" aria-live="polite"></span>
+      </div>
+      <div class="msg" id="m-set-partdb"></div>
+    </form>
+
+    <form class="panel" id="set-druck" tabindex="-1">
+      <h2>Druck <span class="muted">Wo b-PAC und P-touch Editor laufen</span></h2>
+      <div class="grid">
+        <div><label for="s-mode">Modus</label><select id="s-mode" aria-describedby="s-mode-hint">
+          <option value="lokal">Lokal – auf dem Server-PC (Windows)</option>
+          <option value="helfer">Helfer – über den Druck-Helfer am Windows-PC</option></select>
+          <div class="hint" id="s-mode-hint"></div></div>
+        <div><label for="s-printer">Drucker</label><select id="s-printer" aria-describedby="s-printer-hint"></select>
+          <div class="hint" id="s-printer-hint"></div></div>
+      </div>
+      <div class="row"><label class="check"><input type="checkbox" id="s-direct"> Direktdruck anbieten (ohne P-touch Editor)</label></div>
+      <fieldset style="border:0;padding:0;margin:14px 0 0;min-width:0">
+        <legend class="muted" style="padding:0;margin-bottom:6px">Schnittoptionen beim Direktdruck</legend>
+        <div class="checks" id="s-cuts"></div>
+      </fieldset>
+      <div class="row"><button type="submit" class="btn primary" id="s-pr-save">Speichern</button></div>
+      <div class="msg" id="m-set-druck"></div>
+    </form>
+
+    <div class="panel" id="set-helfer" tabindex="-1">
+      <h2>Druck-Helfer <span class="muted">Windows-PC mit P-touch Editor und Drucker</span></h2>
+      <dl class="kv" id="s-helper-info"></dl>
+      <div class="row">
+        <a class="btn primary" id="s-helper-dl" href="/api/helfer/download" download="Labeltool-Helfer.zip">Helfer herunterladen (Windows)</a>
+        <button type="button" class="btn" id="s-newtoken">Helfer-Token neu erzeugen …</button>
+      </div>
+      <ol class="steps" id="s-helper-steps">
+        <li>ZIP herunterladen und in einen festen Ordner entpacken (z. B. <span class="mono">C:\Labeltool-Helfer</span>).</li>
+        <li><span class="mono">helfer.bat</span> doppelklicken – beim ersten Start wird Python eingerichtet, dann öffnet sich der Assistent.</li>
+        <li>Im Assistenten Vorlagen-Ordner und Druckermodell wählen (Server und Token sind schon eingetragen), „Speichern &amp; starten“.</li>
+        <li>Später ändern: <span class="mono">helfer.bat einrichten</span>. Voraussetzungen: Python 3, P-touch Editor, b-PAC Client (64 bit).</li>
+      </ol>
+      <p class="hint" style="margin-top:6px">Das Paket enthält den aktuellen Helfer-Token (gibt es noch keinen, wird er beim Herunterladen erzeugt) – nicht weitergeben.</p>
+      <div class="secret" id="s-secret" hidden>
+        <strong>Neuer Helfer-Token</strong>
+        <p class="muted" style="margin:2px 0 8px">Wird nur jetzt angezeigt. In <span class="mono">helfer.yaml</span> am Windows-PC eintragen und den Helfer neu starten – oder den Helfer neu herunterladen, in denselben Ordner entpacken und <span class="mono">helfer.bat einrichten</span> ausführen.</p>
+        <label for="s-tok-out">Token</label>
+        <div class="pwwrap"><input id="s-tok-out" readonly spellcheck="false">
+          <button type="button" class="btn" id="s-tok-copy">Kopieren</button></div>
+        <div class="row" style="justify-content:space-between">
+          <span class="muted"><span class="mono">helfer.yaml</span>-Ausschnitt (Ordner und Modell ggf. anpassen)</span>
+          <button type="button" class="btn" id="s-yaml-copy">Ausschnitt kopieren</button>
+        </div>
+        <pre id="s-yaml" tabindex="0" aria-label="helfer.yaml-Ausschnitt"></pre>
+        <div class="row"><button type="button" class="btn" id="s-secret-hide">Token ausblenden</button></div>
+      </div>
+      <div class="msg" id="m-set-helfer"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let META = null, BOXES = [];
+
+async function call(method, url, body) {
+  const r = await fetch(url, {method, headers: {"Content-Type": "application/json"}, body: body ? JSON.stringify(body) : undefined});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(apiError(r, j, url));
+  return j;
+}
+// Fehlertext aus einer Antwort; unbekannte Endpunkte (404 "Not Found") bekommen einen Hinweis statt Rohtext
+function apiError(r, j, url) {
+  if (r.status === 404 && (!j.detail || j.detail === "Not Found"))
+    return `Funktion im Server nicht gefunden (404: ${url.split("?")[0]}). Ist das Backend aktuell? Ggf. Server neu starten.`;
+  return j.detail ? (typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail)) : (r.statusText || `Fehler ${r.status}`);
+}
+const fname = p => String(p ?? "").split(/[\\/]/).pop();
+function msg(id, text, ok = true) { const m = $(id); m.className = "msg " + (ok ? "ok" : "err"); m.textContent = text; }
+function sw(hex) { return `<span class="swatch" style="background:${esc(hex)}"></span>`; }
+
+function showTab(tab) {
+  document.querySelectorAll("nav button").forEach(x => {
+    x.classList.toggle("active", x.dataset.tab === tab);
+    if (x.dataset.tab === tab) x.setAttribute("aria-current", "page"); else x.removeAttribute("aria-current");
+  });
+  document.querySelectorAll("section").forEach(s => s.classList.toggle("active", s.id === "tab-" + tab));
+  ({names: loadNames, content: loadContent, boxes: loadBoxes, tpl: loadTemplates, master: loadMaster, settings: loadSettings})[tab]?.();
+}
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => showTab(b.dataset.tab));
+// Status-Chip -> Reiter Einstellungen, passender Bereich
+document.querySelectorAll(".stchip").forEach(c => c.onclick = () => {
+  showTab("settings");
+  const el = document.getElementById(c.dataset.goto);
+  el?.scrollIntoView({block: "start", behavior: "smooth"});
+  el?.focus({preventScroll: true});
+});
+document.querySelectorAll("[data-open]").forEach(b => b.onclick = () => call("POST", "/api/open-output").catch(e => alert(e.message)));
+
+// ---------- Neue Box
+async function init() {
+  META = await call("GET", "/api/meta");
+  $("#src").textContent = `${META.partdb} · Ausgabe: ${META.ausgabe}`;
+  $("#tagname").textContent = META.tag;
+  fillSelects();
+  ["#f-abbr", "#f-comp", "#f-count", "#f-color"].forEach(s => $(s).addEventListener("input", preview));
+  $("#f-type").addEventListener("input", () => { applyBoxType(); preview(); });
+  applyBoxType(); preview(); loadNames(); loadContent(); loadPrintStatus();
+}
+// Direktdruck (b-PAC) ist optional: Knöpfe nur zeigen, wenn in config.yaml eingeschaltet
+let PRINT = {aktiv: false, ok: false};
+async function loadPrintStatus() {
+  try { PRINT = await call("GET", "/api/print-status"); } catch (e) { PRINT = {aktiv: true, ok: false, grund: e.message}; }
+  renderPrintStatus();
+}
+// Knöpfe/Hinweise aus PRINT (/api/print-status) und STATUS (/api/status: Helfer, Drucker) ableiten
+function renderPrintStatus() {
+  const g = printGate();
+  const direct = [...document.querySelectorAll("[data-direct-names]"), $("#b-content-direct")];
+  direct.forEach(b => { b.hidden = !PRINT.aktiv; b.disabled = !g.ok; b.title = g.ok ? "" : g.grund; });
+  // Mit Direktdruck wird der CSV-Weg zum Zweitweg
+  document.querySelectorAll("[data-print-names], #b-content-export").forEach(b => b.classList.toggle("primary", !g.ok));
+  const link = !PRINT.ok && PRINT.hilfe_url ? ` <a href="${esc(PRINT.hilfe_url)}" target="_blank" rel="noopener">Zum Download bei Brother</a>` : "";
+  document.querySelectorAll("[data-print-status]").forEach(el => el.innerHTML = !PRINT.aktiv ? ""
+    : g.ok ? `Direktdruck bereit${PRINT.gewaehlt ? " – " + esc(PRINT.gewaehlt) : ""}`
+    : `Direktdruck nicht möglich: ${esc(g.grund)}${link}`);
+  applyGates();
+}
+const helperMissing = () => STATUS?.helfer?.modus === "helfer" && !STATUS.helfer.verbunden;
+function printGate() {
+  if (!PRINT.aktiv) return {ok: false, grund: PRINT.grund || "Direktdruck ist ausgeschaltet (Einstellungen → Druck)."};
+  const d = STATUS?.drucker;
+  if (helperMissing()) return {ok: false, grund: "Druck-Helfer ist nicht verbunden – am Windows-PC den Helfer (helfer.bat) starten."};
+  if (d && d.angeschlossen === false)
+    return {ok: false, grund: `Drucker${d.name ? " „" + d.name + "“" : ""} ist nicht angeschlossen oder ausgeschaltet${d.status_text ? " (" + d.status_text + ")" : ""}.`};
+  if (d && d.angeschlossen === true && d.bereit === false) return {ok: false, grund: `Drucker nicht bereit: ${d.status_text || "unbekannter Zustand"}`};
+  if (!PRINT.ok) return {ok: false, grund: PRINT.grund || "Direktdruck nicht möglich."};
+  return {ok: true, grund: ""};
+}
+// P-touch Editor / Ordner öffnen braucht im Helfer-Modus einen verbundenen Helfer
+function deskGate() {
+  return helperMissing()
+    ? {ok: false, grund: "Druck-Helfer ist nicht verbunden – P-touch Editor und Ordner lassen sich nur über den Helfer am Windows-PC öffnen."}
+    : {ok: true, grund: ""};
+}
+// Sperrt [data-desk]-Knöpfe (nur die, die wir selbst gesperrt haben, werden wieder freigegeben) und erklärt Vorschau/CSV-Knöpfe
+function applyGates() {
+  const g = deskGate();
+  document.querySelectorAll("[data-desk]").forEach(b => {
+    if (!g.ok) {
+      if (!b.disabled || b.dataset.locked) { b.disabled = true; b.dataset.locked = "1"; b.title = g.grund; }
+    } else if (b.dataset.locked) { b.disabled = false; delete b.dataset.locked; b.title = ""; }
+  });
+  document.querySelectorAll("[data-print-names]").forEach(b => b.title = g.ok ? ""
+    : "Die CSV wird geschrieben, die Vorlage kann aber ohne verbundenen Helfer nicht im P-touch Editor geöffnet werden.");
+  document.querySelectorAll("[data-pv]").forEach(b => b.title = g.ok ? ""
+    : "Ohne verbundenen Helfer nur als Skizze (Näherung) – exakte Vorschau braucht b-PAC am Windows-PC.");
+}
+
+// ---------- Status (Kopfzeile): /api/status alle 15 s, nur bei sichtbarem Tab
+let STATUS = null, STATUS_ERR = "", STATUS_AT = null, statusSeq = 0, statusSig = "";
+const fmtTime = iso => {
+  if (!iso) return "–";
+  const d = iso instanceof Date ? iso : new Date(iso);
+  return isNaN(d) ? String(iso) : d.toLocaleString("de-DE", {dateStyle: "short", timeStyle: "medium"});
+};
+const yesNo = v => v === true ? "ja" : v === false ? "nein" : "unbekannt";
+async function loadStatus(neu = false) {
+  const seq = ++statusSeq;
+  let s = null, err = "";
+  try { s = await call("GET", "/api/status" + (neu ? "?neu=1" : "")); } catch (e) { err = e.message; }
+  if (seq !== statusSeq) return;
+  STATUS = s; STATUS_ERR = err; STATUS_AT = new Date();
+  renderStatus();
+  // Helfer/Drucker haben sich geändert -> Direktdruck-Status neu holen (print-status kennt die Details)
+  const sig = JSON.stringify([s?.helfer?.modus, s?.helfer?.verbunden, s?.drucker?.angeschlossen, s?.drucker?.bereit]);
+  if (sig !== statusSig) { const first = !statusSig; statusSig = sig; if (!first) loadPrintStatus(); else renderPrintStatus(); }
+  else renderPrintStatus();
+  if ($("#tab-settings").classList.contains("active") && SET) { renderHelperInfo(); fillPrinterSelect($("#s-printer").value); }
+  renderTplSource();
+}
+function setChip(id, cls, text, title) {
+  const c = $(id);
+  c.className = "stchip" + (cls ? " " + cls : "");
+  c.lastElementChild.textContent = text;
+  c.title = title + "\n\nKlick: Einstellungen öffnen";
+  c.setAttribute("aria-label", `${text}. ${title.replace(/\n/g, ". ")}`);
+}
+function renderStatus() {
+  if (!STATUS) {
+    const t = `Status nicht abrufbar: ${STATUS_ERR || "keine Antwort"}\nGeprüft: ${fmtTime(STATUS_AT)}`;
+    setChip("#st-partdb", "", "Part-DB: ?", t);
+    setChip("#st-helfer", "", "Helfer: ?", t);
+    setChip("#st-drucker", "", "Drucker: ?", t);
+    return;
+  }
+  const p = STATUS.partdb || {}, h = STATUS.helfer || {}, d = STATUS.drucker || {};
+  const pmap = {online: ["ok", "online"], offline: ["err", "offline"], token_ungueltig: ["err", "Token ungültig"],
+                nicht_konfiguriert: ["warn", "nicht eingerichtet"]};
+  const [pc, pt] = pmap[p.status] || ["", p.status || "?"];
+  setChip("#st-partdb", pc, `Part-DB: ${pt}`, [
+    `Part-DB: ${pt}`, p.url && `URL: ${p.url}`, p.version && `Version: ${p.version}`, p.benutzer && `Benutzer: ${p.benutzer}`,
+    p.latenz_ms != null && `Latenz: ${Math.round(p.latenz_ms)} ms`, p.detail && `Detail: ${p.detail}`,
+    `Geprüft: ${fmtTime(p.geprueft || STATUS_AT)}`].filter(Boolean).join("\n"));
+
+  const lokal = h.modus !== "helfer";
+  let hc, ht;
+  if (lokal) { hc = h.bpac === false ? "warn" : "ok"; ht = "lokal (dieser PC)"; }
+  else if (h.verbunden) { hc = "ok"; ht = "verbunden" + (h.rechner ? ` (${h.rechner})` : ""); }
+  else { hc = "err"; ht = "nicht verbunden"; }
+  setChip("#st-helfer", hc, `Helfer: ${ht}`, [
+    `Helfer: ${ht}`,
+    `Modus: ${lokal ? "lokal – b-PAC/P-touch auf dem Rechner, auf dem der Server läuft" : "Helfer – Windows-PC per Druck-Helfer"}`,
+    !lokal && h.rechner && `Rechner: ${h.rechner}`, !lokal && h.seit && `Verbunden seit: ${fmtTime(h.seit)}`,
+    h.version && `Version: ${h.version}`, h.bpac !== undefined && `b-PAC: ${h.bpac ? "installiert" : "nicht verfügbar"}`,
+    h.drucker_liste?.length && `Drucker installiert: ${h.drucker_liste.join(", ")}`,
+    !lokal && !h.verbunden && "Am Windows-PC den Helfer (helfer.bat) starten.",
+    `Geprüft: ${fmtTime(STATUS_AT)}`].filter(Boolean).join("\n"));
+
+  let dc, dt;
+  if (helperMissing()) { dc = ""; dt = "unbekannt"; }
+  else if (d.bereit) { dc = "ok"; dt = "bereit"; }
+  else if (d.angeschlossen === false) { dc = "err"; dt = "nicht verbunden"; }
+  else if (d.angeschlossen === true) { dc = "warn"; dt = "nicht bereit"; }
+  else { dc = ""; dt = "unbekannt"; }
+  setChip("#st-drucker", dc, `Drucker: ${dt}`, [
+    `Drucker: ${dt}`, `Name: ${d.name || "(aus der Vorlage)"}`, d.status_text && `Status: ${d.status_text}`,
+    `Angeschlossen: ${yesNo(d.angeschlossen)}`, d.bereit !== undefined && `Direktdruck möglich: ${yesNo(d.bereit)}`,
+    helperMissing() && "Ohne verbundenen Helfer nicht prüfbar.", PRINT.aktiv === false && "Direktdruck ist ausgeschaltet.",
+    `Geprüft: ${fmtTime(STATUS_AT)}`].filter(Boolean).join("\n"));
+}
+setInterval(() => { if (!document.hidden) loadStatus(); }, 15000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) loadStatus(); });
+// Nach Einstellungsänderungen: Status sofort neu prüfen, Kopfzeile/Direktdruck aktualisieren
+function afterSettingsChange() {
+  loadStatus(true);
+  loadPrintStatus();
+  call("GET", "/api/meta").then(m => {
+    if (!META) return;
+    Object.assign(META, {partdb: m.partdb, ausgabe: m.ausgabe, bpac_vorschau: m.bpac_vorschau});
+    $("#src").textContent = `${META.partdb} · Ausgabe: ${META.ausgabe}`;
+  }).catch(() => {});
+}
+function fillSelects() {
+  const abbr = $("#f-abbr").value, type = $("#f-type").value;
+  const color = $("#f-color").value;
+  $("#f-abbr").innerHTML = META.kategorien.map(c => `<option value="${esc(c.key)}">${esc(c.name)} (${esc(c.key)}) – ${esc(c.color)}</option>`).join("");
+  $("#f-color").innerHTML = `<option value="">Standard des Inhalts</option>`
+    + META.farben.map(f => `<option value="${esc(f.name)}">${esc(f.name)}</option>`).join("");
+  if (META.farben.some(f => f.name === color)) $("#f-color").value = color;
+  $("#f-type").innerHTML = META.boxtypen.map(t => `<option value="${esc(t.name)}">${esc(t.name)} – ${t.compartments} Abteil${t.compartments == 1 ? "" : "e"}</option>`).join("");
+  if (META.kategorien.some(c => c.key === abbr)) $("#f-abbr").value = abbr;
+  if (META.boxtypen.some(t => t.name === type)) { $("#f-type").value = type; updateCompHint(); } else applyBoxType();
+}
+// Verknüpfung Lagerart -> Abteile: beim Wechsel der Lagerart Abteile vorbelegen
+function applyBoxType() {
+  const t = META.boxtypen.find(t => t.name === $("#f-type").value);
+  if (t) $("#f-comp").value = t.compartments;
+  updateCompHint();
+}
+function updateCompHint() {
+  const t = META.boxtypen.find(t => t.name === $("#f-type").value);
+  $("#h-comp").textContent = !t ? "" : (+$("#f-comp").value === t.compartments
+    ? `Standard für ${t.name}` : `Abweichend – ${t.name} hat ${t.compartments}`);
+}
+let pvTimer;
+function preview() {
+  clearTimeout(pvTimer);
+  pvTimer = setTimeout(async () => {
+    const cat = META.kategorien.find(c => c.key === $("#f-abbr").value);
+    if (!cat) return;
+    updateCompHint();
+    const color = $("#f-color").value || cat.color;
+    $("#f-color").options[0].textContent = `Standard des Inhalts (${cat.color})`;
+    $("#p-color").textContent = "Box drucken in: " + color;
+    $("#p-swatch").style.background = META.farben.find(f => f.name === color)?.hex ?? cat.color_hex;
+    try {
+      const p = await call("GET", `/api/boxes/preview?abbr=${encodeURIComponent(cat.key)}&compartments=${+$("#f-comp").value || 1}&count=${+$("#f-count").value || 1}`);
+      $("#p-names").textContent = p.names.join(", ");
+    } catch (e) { $("#p-names").textContent = "(" + e.message + ")"; }
+  }, 200);
+}
+$("#b-create").onclick = async () => {
+  const btn = $("#b-create"); btn.disabled = true;
+  try {
+    const r = await call("POST", "/api/boxes", {
+      abbr: $("#f-abbr").value, box_type: $("#f-type").value,
+      compartments: +$("#f-comp").value || 1, count: +$("#f-count").value || 1,
+      color: $("#f-color").value || null });
+    msg("#m-new", `Angelegt: ${r.created.map(b => `${b.name} (${b.barcode})`).join(", ")}\nBoxfarbe: ${r.color} – Box-Label unten drucken, sobald alle Boxen angelegt sind.`);
+    preview(); loadNames();
+  } catch (e) { msg("#m-new", e.message, false); }
+  btn.disabled = false;
+};
+
+// ---------- Box-Labels 24 mm
+async function loadNames() {
+  try {
+    const r = await call("GET", "/api/name-labels");
+    $("#c-names").textContent = r.boxes.length;
+    $("#c-new-queue").textContent = r.boxes.length;
+    $("#t-new-queue").innerHTML = r.boxes.map(b => `<tr><td class="mono">${esc(b.name)}</td><td class="mono">${esc(b.barcode)}</td>
+      <td>${esc(b.content)}</td><td>${sw(b.color_hex)}${esc(b.color)}</td><td>${esc(b.box_type)}</td><td>${esc(b.compartments)}</td>
+      <td class="actions">${pvRowButton(b, "q", 7)} <button class="btn" onclick="unqueue(${b.id})">Entfernen</button></td></tr>`).join("")
+      || `<tr><td colspan="7" class="muted">Alle Boxen haben ein Label.</td></tr>`;
+    document.querySelectorAll("[data-print-names]").forEach(b => b.disabled = !r.boxes.length);
+    document.querySelectorAll("[data-names-done]").forEach(b => b.disabled = !r.last_export.length);
+    $("#t-names").innerHTML = r.boxes.map(b => `<tr><td class="mono">${esc(b.name)}</td><td class="mono">${esc(b.barcode)}</td>
+      <td>${esc(b.content)}</td><td>${sw(b.color_hex)}${esc(b.color)}</td><td>${esc(b.box_type)}</td>
+      <td class="actions">${pvRowButton(b, "n", 6)} <button class="btn" onclick="unqueue(${b.id})">Entfernen</button></td></tr>`).join("")
+      || `<tr><td colspan="6" class="muted">Warteschlange leer.</td></tr>`;
+    sweepPreviews(); applyGates();
+    if (r.missing.length) msg("#m-names", `In Part-DB nicht mehr vorhanden: ${r.missing.join(", ")}`, false);
+  } catch (e) { msg("#m-names", e.message, false); }
+}
+async function unqueue(id) { await call("DELETE", "/api/name-labels/queue/" + id); loadNames(); }
+// Box-Labels: gleiche Knöpfe in "Neue Box" und im Reiter Box-Labels
+const namesMsg = () => $("#tab-new").classList.contains("active") ? "#m-new-queue" : "#m-names";
+document.querySelectorAll("[data-print-names]").forEach(b => b.onclick = async () => {
+  try {
+    const r = await call("POST", "/api/name-labels/export", {open_template: true});
+    const tpl = r.vorlage ? `P-touch Editor wird geöffnet – dort alle ${r.labels} Datensätze drucken.`
+                          : `Vorlage nicht geöffnet: ${r.vorlage_fehler}\nCSV: ${r.datei}`;
+    msg(namesMsg(), `${r.labels} Box-Label(s): ${r.boxen.join(", ")}\n${tpl}`, !!r.vorlage);
+    loadNames();
+  } catch (e) { msg(namesMsg(), e.message, false); }
+});
+document.querySelectorAll("[data-direct-names]").forEach(b => b.onclick = async () => {
+  b.disabled = true;
+  try {
+    const r = await call("POST", "/api/name-labels/print");
+    msg(namesMsg(), `${r.gedruckt} Box-Label(s) an den Drucker geschickt: ${r.boxen.join(", ")}\nWenn alle sauber rausgekommen sind: „Gedruckt ✓“.`);
+    loadNames();
+  } catch (e) { msg(namesMsg(), e.message, false); }
+  b.disabled = !printGate().ok;
+});
+document.querySelectorAll("[data-names-done]").forEach(b => b.onclick = async () => {
+  try { const r = await call("POST", "/api/name-labels/done"); msg(namesMsg(), `${r.erledigt} Box(en) als beschriftet markiert.`); loadNames(); }
+  catch (e) { msg(namesMsg(), e.message, false); }
+});
+
+// ---------- Bauteil-Labels 12 mm
+async function loadContent() {
+  $("#content-list").innerHTML = `<p class="muted">Lade …</p>`;
+  try {
+    const list = await call("GET", "/api/content-labels");
+    $("#c-content").textContent = list.length;
+    $("#content-list").innerHTML = list.map(l => `
+      <div class="card">
+        <h3>${sw(l.box.color_hex)}<span class="mono">${esc(l.box.name)}</span>
+          <span class="muted">${esc(l.box.content)} · ${esc(l.box.box_type || "ohne Lagerart")} · Vorlage ${esc(l.vorlage)}</span></h3>
+        <div class="muted">Kategorie auf Label: ${esc(l.row.Category)}</div>
+        <div class="label24" style="grid-template-columns: repeat(${Math.min(l.felder, 6)}, 1fr)">
+          ${l.slots.map((s, i) => `<div class="slot ${s && s.tag ? "tag" : ""}"><small>${i + 1}</small>${s ? esc(s.name) + `<small>${esc(s.footprint)}</small>` : ""}</div>`).join("")}
+        </div>
+        ${l.warnungen.map(w => `<div class="warn">${esc(w)}</div>`).join("")}
+        <div class="row" style="margin-top:8px"><button class="btn" data-pv aria-expanded="false" aria-controls="pv-c-${l.box.id}"
+          onclick="toggleCardPreview(this, ${l.box.id}, ${jsArg(l.box.name)})">Vorschau</button></div>
+        <div class="labelstage" id="pv-c-${l.box.id}" aria-live="polite" hidden></div>
+      </div>`).join("") || `<p class="muted">Keine Bauteile mit Tag gefunden.</p>`;
+    sweepPreviews(); applyGates();
+  } catch (e) { $("#content-list").innerHTML = ""; msg("#m-content", e.message, false); }
+}
+$("#b-content-reload").onclick = loadContent;
+$("#b-content-export").onclick = async () => {
+  try {
+    const r = await call("POST", "/api/content-labels/export");
+    msg("#m-content", `${r.bauteile} Bauteile in ${r.dateien.length} Datei(en) geschrieben. Vorlage öffnen, alle Datensätze drucken, dann „Gedruckt – Tags entfernen“.`);
+    $("#content-files").innerHTML = `<table style="margin-top:12px"><thead><tr><th>CSV</th><th>Labels</th><th>Lagerart</th><th></th></tr></thead><tbody>`
+      + r.dateien.map(d => `<tr><td class="mono">${esc(d.datei.split(/[\\/]/).pop())}</td><td>${d.labels}</td><td>${esc(d.lagerarten.join(", "))}</td>
+        <td class="actions">${d.lbx.length ? `<button class="btn primary" data-desk onclick="openTemplate(${jsArg(d.lagerarten.find(t => META.boxtypen.find(x => x.name === t)?.lbx))}, this)">In P-touch öffnen</button>`
+          : `<span class="muted">keine Vorlage eingetragen</span>`}</td></tr>`).join("") + `</tbody></table>`;
+    $("#b-content-done").disabled = false; applyGates();
+  } catch (e) { msg("#m-content", e.message, false); }
+};
+$("#b-content-direct").onclick = async () => {
+  const b = $("#b-content-direct"); b.disabled = true;
+  try {
+    const r = await call("POST", "/api/content-labels/print");
+    const lines = r.gedruckt.map(g => `${g.vorlage}: ${g.labels} Label(s)`);
+    if (r.uebersprungen.length) lines.push(`Ohne Vorlage übersprungen: ${r.uebersprungen.join(", ")}`);
+    msg("#m-content", `Gedruckt:\n${lines.join("\n")}\nWenn alles passt: „Gedruckt – Tags entfernen“.`, !r.uebersprungen.length);
+    $("#b-content-done").disabled = !r.bauteile;
+  } catch (e) { msg("#m-content", e.message, false); }
+  b.disabled = !printGate().ok;
+};
+$("#b-content-done").onclick = async () => {
+  if (!confirm(`Tag "${META.tag}" bei den exportierten Bauteilen in Part-DB entfernen?`)) return;
+  try {
+    const r = await call("POST", "/api/content-labels/done");
+    msg("#m-content", `Tag bei ${r.entfernt} Bauteilen entfernt.` + (r.fehler.length ? `\nFehler: ${r.fehler.map(f => f.id + ": " + f.fehler).join("\n")}` : ""), !r.fehler.length);
+    $("#b-content-done").disabled = !r.fehler.length;
+    loadContent();
+  } catch (e) { msg("#m-content", e.message, false); }
+};
+
+async function openTemplate(boxType, btn) {
+  btn.disabled = true;
+  try { await call("POST", "/api/templates/open", {box_type: boxType}); btn.textContent = "Geöffnet ✓"; }
+  catch (e) { msg("#m-content", e.message, false); btn.disabled = false; applyGates(); }
+}
+
+// ---------- Alle Boxen
+async function loadBoxes() {
+  try { BOXES = await call("GET", "/api/boxes"); renderBoxes(); }
+  catch (e) { msg("#m-boxes", e.message, false); }
+}
+function renderBoxes() {
+  const q = $("#f-filter").value.toLowerCase();
+  $("#t-boxes").innerHTML = BOXES.filter(b => !q || [b.name, b.content, b.color, b.box_type, b.barcode].join(" ").toLowerCase().includes(q))
+    .map(b => `<tr><td class="mono">${esc(b.name)}</td><td class="mono">${esc(b.barcode)}</td><td>${esc(b.content)}</td>
+      <td>${sw(b.color_hex)}${esc(b.color)}</td><td>${esc(b.box_type)}</td><td>${esc(b.compartments)}</td>
+      <td>${b.in_queue ? `<span class="muted">in Warteschlange</span>` : `<button class="btn" onclick="requeue(${b.id})">Box-Label nachdrucken</button>`}</td></tr>`).join("");
+}
+$("#f-filter").addEventListener("input", renderBoxes);
+async function requeue(id) { await call("POST", "/api/name-labels/queue", {ids: [id]}); loadBoxes(); loadNames(); }
+
+// ---------- Stammdaten
+let MASTER = null, EDIT = null;   // EDIT = {kind: "color"|"cat"|"type", key: alter Schlüssel oder null (neu)}
+const KINDS = {
+  color: {url: "/api/stammdaten/farben", tbody: "#t-colors", keys: () => MASTER.farben.map(f => f.name),
+          label: k => `Boxfarbe „${k}“`},
+  cat:   {url: "/api/stammdaten/kategorien", tbody: "#t-cats", keys: () => MASTER.kategorien.map(c => c.key),
+          label: k => `Inhalt „${MASTER.kategorien.find(c => c.key === k)?.name}“ (${k})`},
+  type:  {url: "/api/stammdaten/lagerarten", tbody: "#t-types", keys: () => MASTER.lagerarten.map(t => t.name),
+          label: k => `Lagerart „${k}“`},
+};
+const renderAll = () => { renderColors(); renderCats(); renderTypes(); };
+async function loadMaster() {
+  try { renderMaster(await call("GET", "/api/stammdaten")); }
+  catch (e) { msg("#m-master", e.message, false); }
+  if (!BOXES.length) call("GET", "/api/boxes").then(b => { BOXES = b; }).catch(() => {});
+}
+function renderMaster(data) {
+  MASTER = data;
+  META.kategorien = data.kategorien;
+  META.boxtypen = data.lagerarten;
+  META.farben = data.farben;
+  fillSelects(); preview();
+  $("#undobar").hidden = !data.rueckgaengig;
+  $("#undo-text").textContent = data.rueckgaengig || "";
+  $("#undo-count").textContent = data.rueckgaengig_anzahl > 1 ? `(${data.rueckgaengig_anzahl} Schritte gespeichert)` : "";
+  $("#tpl-dir").textContent = data.vorlagen_ordner;
+  renderAll();
+}
+const isEdit = (kind, key) => EDIT && EDIT.kind === kind && EDIT.key === key;
+const jsArg = v => esc(JSON.stringify(v));
+const actions = (kind, key) => `<td class="actions">
+  <button class="btn" onclick="startEdit('${kind}', ${jsArg(key)})">Bearbeiten</button>
+  <button class="btn" onclick="askDelete('${kind}', ${jsArg(key)}, this)">Löschen</button></td>`;
+const editActions = kind => `<td class="actions">
+  <button class="btn primary" onclick="saveEdit('${kind}')">Speichern</button>
+  <button class="btn" onclick="cancelEdit()">Abbrechen</button></td>`;
+
+function renderColors() {
+  const row = f => isEdit("color", f.name) ? colorEditRow(f) : `<tr>
+    <td>${sw(f.hex)}${esc(f.name)}</td><td class="mono muted">${esc(f.hex)}</td>
+    <td class="muted">${f.inhalte.length ? esc(f.inhalte.join(", ")) : "–"}</td>${actions("color", f.name)}</tr>`;
+  $("#t-colors").innerHTML = MASTER.farben.map(row).join("")
+    + (isEdit("color", null) ? colorEditRow({name: "", hex: "#9a9a9a"}) : "");
+}
+function colorEditRow(f) {
+  return `<tr id="edit-row">
+    <td><input id="e-cname" value="${esc(f.name)}" placeholder="z. B. Hellblau"></td>
+    <td><div class="hexedit"><input id="e-hex" type="color" value="${esc(f.hex)}"
+          oninput="$('#e-hextext').value = this.value">
+        <input id="e-hextext" type="text" value="${esc(f.hex)}"
+          oninput="if (/^#[0-9a-f]{6}$/i.test(this.value)) $('#e-hex').value = this.value"></div></td>
+    <td></td>${editActions("color")}</tr>`;
+}
+function renderCats() {
+  const row = c => isEdit("cat", c.key) ? catEditRow(c) : `<tr>
+    <td class="mono">${esc(c.key)}</td><td>${esc(c.name)}</td><td>${sw(c.color_hex)}${esc(c.color)}</td>${actions("cat", c.key)}</tr>`;
+  $("#t-cats").innerHTML = MASTER.kategorien.map(row).join("")
+    + (isEdit("cat", null) ? catEditRow({key: "", name: "", color: ""}) : "");
+}
+function catEditRow(c) {
+  return `<tr id="edit-row">
+    <td><input id="e-key" value="${esc(c.key)}" placeholder="z. B. M12"></td>
+    <td><input id="e-name" value="${esc(c.name)}" placeholder="Name"></td>
+    <td><select id="e-color">${c.color ? "" : `<option value="">– Boxfarbe wählen –</option>`}${MASTER.farben
+      .map(f => `<option ${f.name === c.color ? "selected" : ""}>${esc(f.name)}</option>`).join("")}</select></td>${editActions("cat")}</tr>`;
+}
+function renderTypes() {
+  const lbx = t => !t.lbx ? `<span class="muted">–</span>`
+    : t.lbx_ok ? `<span class="mono">${esc(t.lbx)}</span>` : `<span class="mono">${esc(t.lbx)}</span> <span class="warn">fehlt</span>`;
+  const row = t => isEdit("type", t.name) ? typeEditRow(t) : `<tr>
+    <td class="mono">${esc(t.name)}</td><td>${t.compartments}</td><td>${lbx(t)}</td>
+    <td class="mono">${t.file ? esc(t.file) : `<span class="muted">${esc(t.vorlage.file)}</span>`}</td>${actions("type", t.name)}</tr>`;
+  $("#t-types").innerHTML = MASTER.lagerarten.map(row).join("")
+    + (isEdit("type", null) ? typeEditRow({name: "", compartments: 1, lbx: "", file: ""}) : "");
+}
+function typeEditRow(t) {
+  return `<tr id="edit-row">
+    <td><input id="e-tname" value="${esc(t.name)}" placeholder="z. B. WinBin8"></td>
+    <td><input id="e-comp" type="number" min="1" max="99" value="${t.compartments}"></td>
+    <td><select id="e-lbx"><option value="">– keine –</option>${[...new Set([...MASTER.vorlagen, t.lbx].filter(Boolean))]
+      .map(f => `<option ${f === t.lbx ? "selected" : ""}>${esc(f)}</option>`).join("")}</select></td>
+    <td><input id="e-file" value="${esc(t.file)}" placeholder="Inhalt_${esc(t.name || "<Name>")}.csv"></td>${editActions("type")}</tr>`;
+}
+function startEdit(kind, key) {
+  EDIT = {kind, key}; renderAll();
+  const row = $("#edit-row");
+  row.querySelector("input")?.focus();
+  row.scrollIntoView({block: "nearest"});
+  row.addEventListener("keydown", e => {
+    if (e.key === "Enter") saveEdit(kind);
+    if (e.key === "Escape") cancelEdit();
+  });
+}
+function cancelEdit() { EDIT = null; renderAll(); }
+$("#b-color-new").onclick = () => startEdit("color", null);
+$("#b-cat-new").onclick = () => startEdit("cat", null);
+$("#b-type-new").onclick = () => startEdit("type", null);
+
+async function saveEdit(kind) {
+  const key = EDIT.key, isNew = key === null;
+  const base = KINDS[kind].url;
+  const body = {
+    color: () => ({name: $("#e-cname").value.trim(), hex: $("#e-hextext").value.trim()}),
+    cat: () => ({key: $("#e-key").value.trim(), name: $("#e-name").value.trim(), color: $("#e-color").value}),
+    type: () => ({name: $("#e-tname").value.trim(), compartments: +$("#e-comp").value || 1,
+                  lbx: $("#e-lbx").value, file: $("#e-file").value.trim()}),
+  }[kind]();
+  const newKey = kind === "cat" ? body.key : body.name;
+  const used = isNew ? 0 : usedBy(kind, key).length;
+  if (used && newKey !== key && !confirm(`"${key}" in "${newKey}" umbenennen?\n\n${used} bestehende Box(en) in Part-DB nutzen noch "${key}" und werden nicht umbenannt.`)) return;
+  try {
+    const data = await call(isNew ? "POST" : "PUT", isNew ? base : `${base}/${encodeURIComponent(key)}`, body);
+    EDIT = null; renderMaster(data);
+    msg("#m-master", data.rueckgaengig);
+  } catch (e) { msg("#m-master", e.message, false); }
+}
+
+const colorKey = n => (n || "").toLowerCase().replace(/[\s\-_]+/g, "");
+function usedBy(kind, key) {
+  return BOXES.filter(b => kind === "cat" ? b.abbr === key
+    : kind === "color" ? colorKey(b.color) === colorKey(key) : b.box_type === key);
+}
+// Löschen: 1. Nachfrage in der Zeile, 2. Nachfrage als Dialog, danach Rückgängig möglich
+function askDelete(kind, key, btn) {
+  EDIT = null; renderAll();
+  const k = KINDS[kind];
+  const tr = $(k.tbody).children[k.keys().indexOf(key)];
+  const label = k.label(key);
+  tr.classList.add("confirm");
+  tr.querySelector("td.actions").innerHTML = `<span>Wirklich löschen?</span>
+    <button class="btn danger" onclick="confirmDelete('${kind}', ${jsArg(key)}, ${jsArg(label)})">Ja, löschen</button>
+    <button class="btn" onclick="cancelEdit()">Nein</button>`;
+}
+async function confirmDelete(kind, key, label) {
+  const used = usedBy(kind, key).length;
+  const warn = used ? `\n\nAchtung: ${used} Box(en) in Part-DB nutzen das noch. Die Boxen bleiben bestehen, verlieren im Tool aber die Zuordnung.` : "";
+  if (!confirm(`${label} endgültig löschen?${warn}\n\nDas lässt sich danach mit „Rückgängig“ wiederherstellen.`)) { cancelEdit(); return; }
+  try {
+    const data = await call("DELETE", `${KINDS[kind].url}/${encodeURIComponent(key)}`);
+    EDIT = null; renderMaster(data);
+    msg("#m-master", `${data.rueckgaengig} – mit „Rückgängig“ oben wiederherstellbar.`);
+  } catch (e) { msg("#m-master", e.message, false); }
+}
+$("#b-undo").onclick = async () => {
+  try {
+    const data = await call("POST", "/api/stammdaten/undo");
+    EDIT = null; renderMaster(data);
+    msg("#m-master", `Rückgängig gemacht: ${data.rueckgaengig_gemacht}`);
+  } catch (e) { msg("#m-master", e.message, false); }
+};
+
+// ---------- Label-Vorschau (Bild vom Server: PNG exakt via b-PAC oder SVG-Skizze)
+// Per fetch statt <img src>, damit Fehler-JSON lesbar ist und der Header X-Vorschau ausgewertet werden kann.
+async function fetchImage(url, body) {
+  let r;
+  try {
+    r = await fetch(url, body === undefined || body === null ? undefined
+      : {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+  } catch (e) { throw new Error("Server nicht erreichbar: " + e.message); }
+  if (!r.ok) throw new Error(apiError(r, await r.json().catch(() => ({})), url));
+  const blob = await r.blob();
+  const type = (r.headers.get("Content-Type") || blob.type || "").toLowerCase();
+  if (!type.startsWith("image/")) throw new Error("Unerwartete Antwort vom Server (kein Bild).");
+  const art = (r.headers.get("X-Vorschau") || (type.includes("svg") ? "skizze" : "")).toLowerCase();
+  return {blob, art};
+}
+const PV = {};   // Container-ID -> {seq, url}; alte Object-URLs werden freigegeben
+function dropPreview(id) { const st = PV[id]; if (st?.url) URL.revokeObjectURL(st.url); if (st) st.seq++; delete PV[id]; }
+function sweepPreviews() { Object.keys(PV).forEach(id => { if (!document.getElementById(id)) dropPreview(id); }); }
+// Lädt ein Vorschaubild in den Container #id. opts: {alt, widthPx}
+async function showPreview(id, url, body, opts = {}) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const st = PV[id] ??= {seq: 0, url: null};
+  const seq = ++st.seq;
+  el.classList.add("loading");
+  el.setAttribute("aria-busy", "true");
+  if (!st.url) el.innerHTML = `<p class="muted" style="margin:0">Lade Vorschau …</p>`;
+  try {
+    const {blob, art} = await fetchImage(url, body);
+    if (seq !== st.seq || !el.isConnected) return;
+    const u = URL.createObjectURL(blob);
+    if (st.url) URL.revokeObjectURL(st.url);
+    st.url = u;
+    const badge = art === "bpac" ? `<span class="pvbadge" title="Gerendert vom P-touch-Treiber (b-PAC) – entspricht dem Druck">exakt (b-PAC)</span>`
+      : art === "skizze" ? `<span class="pvbadge sketch" title="Näherung ohne b-PAC – Schrift und Abstände können im Druck abweichen">Skizze</span>`
+      : `<span class="pvbadge sketch">Vorschau</span>`;
+    const w = opts.widthPx ? ` style="width:${Math.round(opts.widthPx)}px"` : "";
+    el.innerHTML = `${badge}<div class="paper"><img src="${u}" alt="${esc(opts.alt || "Label-Vorschau")}"${w}></div>`;
+    if (!opts.widthPx) {
+      // Ohne bekannte Labellänge: Skizzen (SVG in mm ≈ 3,8 px/mm) auf ähnliche Größe wie b-PAC-PNGs bringen
+      const img = el.querySelector("img");
+      img.onload = () => { img.style.width = img.naturalWidth ? Math.round(img.naturalWidth * (art === "skizze" ? 2 : 1)) + "px" : "100%"; };
+    }
+  } catch (e) {
+    if (seq !== st.seq || !el.isConnected) return;
+    if (st.url) { URL.revokeObjectURL(st.url); st.url = null; }
+    el.innerHTML = `<div class="warn">Vorschau nicht möglich: ${esc(e.message)}</div>`;
+  } finally {
+    if (seq === st.seq) { el.classList.remove("loading"); el.removeAttribute("aria-busy"); }
+  }
+}
+// Box-Label-Warteschlangen: Vorschau in aufklappender Zeile darunter
+const pvRowButton = (b, key, cols) => `<button class="btn" data-pv aria-expanded="false"
+  onclick="toggleRowPreview(this, ${b.id}, '${key}', ${cols}, ${jsArg(b.name)})">Vorschau</button>`;
+function toggleRowPreview(btn, id, key, cols, name) {
+  const tr = btn.closest("tr"), pid = `pv-${key}-${id}`;
+  const next = tr.nextElementSibling;
+  if (next?.classList.contains("pvrow")) {
+    next.remove(); dropPreview(pid);
+    btn.setAttribute("aria-expanded", "false"); btn.textContent = "Vorschau";
+    return;
+  }
+  tr.insertAdjacentHTML("afterend", `<tr class="pvrow"><td colspan="${cols}"><div class="labelstage" id="${pid}" aria-live="polite" style="margin:0"></div></td></tr>`);
+  btn.setAttribute("aria-expanded", "true"); btn.setAttribute("aria-controls", pid); btn.textContent = "Vorschau ausblenden";
+  showPreview(pid, `/api/name-labels/${id}/vorschau`, null, {alt: `Vorschau Box-Label ${name}`});
+}
+// Bauteil-Labels: Vorschau unter der Feld-Darstellung der Karte
+function toggleCardPreview(btn, id, name) {
+  const pid = `pv-c-${id}`, el = document.getElementById(pid);
+  if (!el) return;
+  if (!el.hidden) {
+    el.hidden = true; el.innerHTML = ""; dropPreview(pid);
+    btn.setAttribute("aria-expanded", "false"); btn.textContent = "Vorschau";
+    return;
+  }
+  el.hidden = false;
+  btn.setAttribute("aria-expanded", "true"); btn.textContent = "Vorschau ausblenden";
+  showPreview(pid, `/api/content-labels/${id}/vorschau`, null, {alt: `Vorschau Bauteil-Label ${name}`});
+}
+
+// ---------- Vorlagen
+let TPL = {list: [], ordner: "", bpac: false};
+let TW = null;   // offene Arbeitsfläche: {datei, idx, quelle, box_id, spalten, zeile, edited, timer}
+const PX_PER_MM = 7;   // Anzeigegröße der Vorschau im Reiter Vorlagen
+const tplUrl = (datei, suffix = "") => `/api/vorlagen/${encodeURIComponent(datei)}${suffix}`;
+const mm = x => String(Math.round(+x * 10) / 10).replace(".", ",");
+const tplCard = idx => document.getElementById("tc-" + idx);
+
+async function loadTemplates(openDatei) {
+  if (!TPL.list.length) $("#tpl-list").innerHTML = `<p class="muted">Lade …</p>`;
+  let r;
+  try { r = await call("GET", "/api/vorlagen"); }
+  catch (e) { closeWork(); $("#tpl-list").innerHTML = ""; TPL.list = []; msg("#m-tpl", e.message, false); return; }
+  if ($("#m-tpl").classList.contains("err")) $("#m-tpl").className = "msg";
+  TPL = {list: r.vorlagen || [], ordner: r.ordner || "", bpac: !!(r.bpac_vorschau ?? META?.bpac_vorschau)};
+  $("#tpl-folder").textContent = TPL.ordner || "–";
+  renderTplSource();
+  $("#tpl-mode").textContent = TPL.bpac ? "Vorschau exakt über b-PAC (P-touch-Treiber)."
+    : "b-PAC nicht verfügbar – Vorschau als Skizze (Näherung, Druck kann leicht abweichen).";
+  const keep = typeof openDatei === "string" ? openDatei : TW?.datei;
+  closeWork();
+  const missing = (r.fehlende_dateien || []).map(f => `<div class="warn">Lagerart ${esc(f.lagerart)}: Vorlage <span class="mono">${esc(f.datei)}</span> fehlt im Vorlagenordner.</div>`).join("");
+  $("#tpl-list").innerHTML = missing + (TPL.list.map((v, i) => `<div class="card" id="tc-${i}">${tplHead(v, i, false)}
+    <div class="tplwork" id="tw-${i}" hidden></div></div>`).join("")
+    || `<p class="muted">Keine Vorlagen (.lbx) im Vorlagenordner gefunden.</p>`);
+  if (keep && TPL.list.some(v => v.datei === keep)) openWork(keep, {mark: typeof openDatei === "string"});
+}
+$("#b-tpl-reload").onclick = () => loadTemplates();
+// Helfer-Modus mit Vorlagen-Abgleich: die .lbx-Dateien kommen aus einem Ordner am Windows-PC
+function renderTplSource() {
+  const el = $("#tpl-source"); if (!el) return;
+  const h = STATUS?.helfer, v = h?.vorlagen && typeof h.vorlagen === "object" ? h.vorlagen : null;
+  let text = "";
+  if (h?.modus === "helfer" && v) {
+    if (v.ordner) text = `Quelle: Ordner ${v.ordner}${h.rechner ? " auf Rechner " + h.rechner : ""}`
+      + (v.abgeglichen ? ` – abgeglichen ${fmtTime(v.abgeglichen)}` : "")
+      + (h.verbunden ? "" : " (Helfer gerade nicht verbunden)")
+      + (v.fehler ? ` – ⚠ ${v.fehler}` : "") + ". Vorlagen dort bzw. im P-touch Editor ändern.";
+    else text = "Quelle: Vorlagen auf dem Server (im Helfer ist kein Vorlagen-Ordner eingestellt).";
+    if (v.hinweis) text += ` Hinweis: ${v.hinweis}`;
+  }
+  el.innerHTML = esc(text) + pendingDeletesHtml(h);
+  el.style.display = text ? "block" : "none";
+}
+// Massen-Löschschutz: fehlen auf dem PC viele Vorlagen auf einmal, verschiebt der Server sie erst nach Bestätigung
+function pendingDeletesHtml(h) {
+  const list = h?.vorlagen?.ausstehend;
+  if (!Array.isArray(list) || !list.length) return "";
+  return `<div class="warn" style="margin-top:8px">${list.length} Vorlage(n) fehlen im PC-Ordner und wurden auf dem Server
+    noch NICHT entfernt: ${esc(list.join(", "))}. Ist der Ordner richtig gewählt?
+    <button class="btn danger" style="margin-left:8px" onclick="confirmPendingDeletes()">Löschen bestätigen …</button></div>`;
+}
+async function confirmPendingDeletes() {
+  const list = STATUS?.helfer?.vorlagen?.ausstehend || [];
+  if (!confirm(`${list.length} Vorlage(n) auf dem Server entfernen?\n\n${list.join("\n")}`)) return;
+  if (!confirm("Wirklich? Die Dateien werden auf dem Server nach „.geloescht“ verschoben "
+               + "(dort wiederherstellbar). Auf dem PC sind sie bereits weg.")) return;
+  try {
+    const r = await call("POST", "/api/helfer/vorlagen/loeschen-bestaetigen");
+    msg("#m-tpl", `${r.bestaetigt.length} Vorlage(n) entfernt – liegen auf dem Server unter .geloescht.`);
+    await loadStatus(true); loadTemplates();
+  } catch (e) { msg("#m-tpl", e.message, false); }
+}
+
+function tplHead(v, i, open) {
+  const uses = [...(v.box_label ? [`<span class="chip">Box-Label</span>`] : []),
+                ...(v.lagerarten || []).map(t => `<span class="chip mono">${esc(t)}</span>`)];
+  const len = v.laenge_mm ? ` × ${mm(v.laenge_mm)} mm` : " · Länge automatisch";
+  return `<div class="tplhead">
+    <div class="tplinfo">
+      <h3><span class="mono">${esc(v.datei)}</span> <span class="chip band">${v.band_mm ? mm(v.band_mm) + " mm" : "Band ?"}${len}</span></h3>
+      <div class="chips"><span class="muted">Genutzt von:</span>${uses.join("") || `<span class="muted">– nicht zugeordnet</span>`}</div>
+      <div class="chips"><span class="muted">Felder:</span>${(v.felder || []).map(f => `<span class="chip mono">${esc(f)}</span>`).join("")
+        || `<span class="muted">– keine Datenbankfelder</span>`}</div>
+      ${(v.warnungen || []).map(w => `<div class="warn">${esc(w)}</div>`).join("")}
+    </div>
+    <button class="btn${open ? " primary" : ""}" aria-expanded="${open}" aria-controls="tw-${i}"
+      onclick="toggleWork(${jsArg(v.datei)})">${open ? "Schließen" : "Vorschau &amp; Bearbeiten"}</button>
+  </div>`;
+}
+function toggleWork(datei) {
+  if (TW?.datei === datei) closeWork(); else openWork(datei);
+  // Kopfzeile wurde neu gerendert – Fokus für Tastaturbedienung zurück auf den Knopf
+  tplCard(TPL.list.findIndex(v => v.datei === datei))?.querySelector(".tplhead .btn")?.focus();
+}
+function closeWork() {
+  if (!TW) return;
+  clearTimeout(TW.timer);
+  const card = tplCard(TW.idx), v = TPL.list[TW.idx];
+  dropPreview("tw-pv");
+  if (card && v) {
+    card.classList.remove("open", "fresh");
+    const w = card.querySelector(".tplwork"); w.hidden = true; w.innerHTML = "";
+    card.querySelector(".tplhead").outerHTML = tplHead(v, TW.idx, false);
+  }
+  TW = null;
+}
+function openWork(datei, opts = {}) {
+  closeWork();
+  const idx = TPL.list.findIndex(v => v.datei === datei);
+  if (idx < 0) return;
+  const v = TPL.list[idx], card = tplCard(idx);
+  const t = TW = {datei, idx, quelle: "worst", box_id: null, spalten: [], zeile: {}, edited: new Set(), timer: null};
+  card.classList.add("open"); card.classList.toggle("fresh", !!opts.mark);
+  card.querySelector(".tplhead").outerHTML = tplHead(v, idx, true);
+  const w = card.querySelector(".tplwork");
+  w.hidden = false;
+  w.innerHTML = `
+    <div class="grid">
+      <div><label for="tw-src">Beispieldaten</label><select id="tw-src">
+        <option value="worst">Worst Case (lange Werte)</option>
+        <option value="vorlage">Text aus der Vorlage</option>
+        <option value="box">Echte Box …</option></select></div>
+      <div id="tw-boxwrap" hidden><label for="tw-box">Box</label><select id="tw-box"></select></div>
+    </div>
+    <div class="labelstage big" id="tw-pv" aria-live="polite"></div>
+    <div class="row">
+      <button class="btn primary" id="tw-refresh" data-pv>Vorschau aktualisieren</button>
+      <button class="btn" id="tw-edit" data-desk>Im P-touch Editor bearbeiten</button>
+      <button class="btn" id="tw-copybtn" aria-expanded="false" aria-controls="tw-copy">Kopie als neue Vorlage …</button>
+    </div>
+    <div class="msg" id="m-tw"></div>
+    <div class="copyform" id="tw-copy" hidden></div>
+    <h4>Beispielzeile <span class="muted" style="font-weight:400">– Änderungen aktualisieren die Vorschau</span></h4>
+    <div class="tplfields" id="tw-fields"></div>`;
+  $("#tw-src").onchange = e => { t.quelle = e.target.value; $("#tw-boxwrap").hidden = t.quelle !== "box"; selectSource(t); };
+  $("#tw-box").onchange = e => { t.box_id = +e.target.value || null; selectSource(t); };
+  $("#tw-refresh").onclick = () => refreshTpl(t);
+  $("#tw-edit").onclick = () => editTpl(t);
+  $("#tw-copybtn").onclick = () => toggleCopy(t);
+  $("#tw-fields").addEventListener("input", e => {
+    const col = e.target.dataset.col;
+    if (col === undefined) return;
+    t.zeile[col] = e.target.value; t.edited.add(col);
+    clearTimeout(t.timer);
+    t.timer = setTimeout(() => tplPreview(t), 400);
+  });
+  applyGates();
+  if (opts.mark) card.scrollIntoView({block: "start", behavior: "smooth"});
+  fillBoxSelect(t);
+  loadExample(t);
+}
+const tplBoxes = v => v.box_label ? BOXES : BOXES.filter(b => (v.lagerarten || []).includes(b.box_type));
+async function fillBoxSelect(t) {
+  if (!BOXES.length) { try { BOXES = await call("GET", "/api/boxes"); } catch (e) { /* Meldung erst bei Auswahl */ } }
+  if (TW !== t) return;
+  const boxes = tplBoxes(TPL.list[t.idx]);
+  const sel = $("#tw-box");
+  sel.innerHTML = boxes.map(b => `<option value="${b.id}">${esc(b.name)} – ${esc(b.content)}${b.box_type ? " (" + esc(b.box_type) + ")" : ""}</option>`).join("")
+    || `<option value="">Keine passende Box in Part-DB</option>`;
+  sel.disabled = !boxes.length;
+  if (t.box_id && boxes.some(b => b.id === t.box_id)) sel.value = t.box_id;
+  else if (t.quelle === "box" && boxes.length) selectSource(t);   // „Echte Box“ gewählt, bevor die Liste da war
+}
+function selectSource(t) {
+  if (t.quelle === "box") {
+    t.box_id = +$("#tw-box").value || null;
+    if (!t.box_id) {
+      const v = TPL.list[t.idx];
+      $("#tw-fields").innerHTML = `<div class="warn" style="grid-column:1/-1">Keine Box gefunden, die diese Vorlage nutzt${v.box_label ? "" : " (Lagerart " + esc((v.lagerarten || []).join(", ") || "–") + ")"}.</div>`;
+      return;
+    }
+  }
+  t.edited.clear();
+  loadExample(t);
+}
+function exampleQuery(t) {
+  return `quelle=${encodeURIComponent(t.quelle)}` + (t.quelle === "box" && t.box_id ? `&box_id=${t.box_id}` : "");
+}
+// Beispielzeile laden; merge=true behält vom Nutzer geänderte Werte
+async function loadExample(t, merge = false) {
+  if (!merge) $("#tw-fields").innerHTML = `<p class="muted" style="margin:0">Lade Beispieldaten …</p>`;
+  try {
+    const r = await call("GET", tplUrl(t.datei, "/beispiel?" + exampleQuery(t)));
+    if (TW !== t) return;
+    const row = (r.zeilen || [])[0] || {};
+    const spalten = r.spalten?.length ? r.spalten : Object.keys(row);
+    const old = t.zeile;
+    t.spalten = spalten;
+    t.zeile = Object.fromEntries(spalten.map(s => [s, merge && t.edited.has(s) ? old[s] : String(row[s] ?? "")]));
+    renderFields(t);
+    tplPreview(t);
+  } catch (e) {
+    if (TW !== t) return;
+    $("#tw-fields").innerHTML = `<div class="warn" style="grid-column:1/-1">Beispieldaten nicht verfügbar: ${esc(e.message)}</div>`;
+    // ohne editierbare Zeile wenigstens die Vorschau direkt aus der Quelle
+    showPreview("tw-pv", tplUrl(t.datei, "/vorschau?" + exampleQuery(t)), null, tplPvOpts(t));
+  }
+}
+function renderFields(t) {
+  $("#tw-fields").innerHTML = t.spalten.map((s, i) => {
+    const val = t.zeile[s] ?? "", id = "tw-f-" + i;
+    const input = val.includes("\n")
+      ? `<textarea id="${id}" data-col="${esc(s)}" rows="${Math.min(val.split("\n").length, 4)}" spellcheck="false">${esc(val)}</textarea>`
+      : `<input id="${id}" data-col="${esc(s)}" value="${esc(val)}" spellcheck="false" autocomplete="off">`;
+    return `<label for="${id}" class="mono">${esc(s)}</label>${input}`;
+  }).join("") || `<p class="muted" style="grid-column:1/-1;margin:0">Die Vorlage hat keine Datenbankfelder – die Vorschau zeigt den festen Text.</p>`;
+}
+function tplPvOpts(t) {
+  const v = TPL.list[t.idx];
+  const text = Object.values(t.zeile).filter(Boolean).join(" · ");
+  return {alt: `Vorschau ${t.datei}${text ? ": " + (text.length > 160 ? text.slice(0, 160) + " …" : text) : ""}`,
+          widthPx: v?.laenge_mm ? v.laenge_mm * PX_PER_MM : null};
+}
+function tplPreview(t) {
+  clearTimeout(t.timer);
+  if (TW !== t) return;
+  showPreview("tw-pv", tplUrl(t.datei, "/vorschau"), {zeile: t.zeile}, tplPvOpts(t));
+}
+// Nach dem Speichern im Editor: Vorlagendaten (Felder, Warnungen) und Beispiel neu holen, eigene Eingaben bleiben
+async function refreshTpl(t) {
+  try {
+    const r = await call("GET", "/api/vorlagen");
+    const v = (r.vorlagen || []).find(x => x.datei === t.datei);
+    if (v && TW === t) {
+      TPL.list[t.idx] = v;
+      tplCard(t.idx).querySelector(".tplhead").outerHTML = tplHead(v, t.idx, true);
+    }
+  } catch (e) { /* Liste bleibt wie sie ist; Fehler zeigt ggf. die Vorschau */ }
+  if (TW !== t) return;
+  if (t.quelle === "box" && !t.box_id) return selectSource(t);
+  loadExample(t, true);
+}
+async function editTpl(t) {
+  const b = $("#tw-edit"); b.disabled = true;
+  try {
+    const r = await call("POST", tplUrl(t.datei, "/bearbeiten"), {quelle: t.quelle, box_id: t.quelle === "box" ? t.box_id : null});
+    if (TW === t) msg("#m-tw", `${fname(r.vorlage) || t.datei} ist im P-touch Editor geöffnet${r.csv ? `, verknüpft mit Beispieldaten (${fname(r.csv)})` : ""}.`
+      + (r.backup ? `\nSicherung der Originalvorlage: ${fname(r.backup)}` : "")
+      + `\nIm Editor ändern und speichern, dann hier „Vorschau aktualisieren“.`);
+  } catch (e) { if (TW === t) msg("#m-tw", e.message, false); }
+  if (TW === t) { b.disabled = false; applyGates(); }
+}
+
+// Kopie als neue Vorlage
+function uniqueTplName(name) {
+  const base = name.replace(/\.lbx$/i, ""), taken = new Set(TPL.list.map(v => v.datei.toLowerCase()));
+  let n = base + ".lbx", i = 2;
+  while (taken.has(n.toLowerCase())) n = `${base}_${i++}.lbx`;
+  return n;
+}
+function suggestTplName(src, type) {
+  const base = src.replace(/\.lbx$/i, ""), m = base.match(/^(.*?)(\d+)$/);
+  if (type) return uniqueTplName(m ? m[1] + type.compartments : `${base}_${type.name}`);
+  return uniqueTplName(m ? m[1] + (+m[2] + 1) : base + "_Kopie");
+}
+async function toggleCopy(t) {
+  const box = $("#tw-copy"), btn = $("#tw-copybtn");
+  if (!box.hidden) { box.hidden = true; btn.setAttribute("aria-expanded", "false"); btn.focus(); return; }
+  let types = META?.boxtypen || [];
+  try { types = (await call("GET", "/api/stammdaten")).lagerarten || types; } catch (e) { /* META reicht */ }
+  if (TW !== t) return;
+  const label = x => `${x.name} – ${x.compartments} Abteil${x.compartments == 1 ? "" : "e"}`;
+  const free = types.filter(x => !x.lbx), used = types.filter(x => x.lbx);
+  box.innerHTML = `
+    <div class="grid">
+      <div><label for="tw-cname">Neuer Dateiname</label>
+        <input id="tw-cname" spellcheck="false" autocomplete="off"><div class="hint">Endung .lbx wird ergänzt; die Datei landet im Vorlagenordner.</div></div>
+      <div><label for="tw-ctype">Lagerart zuweisen (optional)</label><select id="tw-ctype">
+        <option value="">– keine –</option>
+        ${free.length ? `<optgroup label="Ohne Vorlage">${free.map(x => `<option value="${esc(x.name)}">${esc(label(x))}</option>`).join("")}</optgroup>` : ""}
+        ${used.length ? `<optgroup label="Hat schon eine Vorlage (wird ersetzt)">${used.map(x => `<option value="${esc(x.name)}">${esc(label(x))} · jetzt ${esc(x.lbx)}</option>`).join("")}</optgroup>` : ""}
+      </select></div>
+    </div>
+    <div class="row">
+      <button class="btn primary" id="tw-cgo">Kopie anlegen &amp; im Editor öffnen</button>
+      <button class="btn" id="tw-ccancel">Abbrechen</button>
+    </div>`;
+  box.hidden = false; btn.setAttribute("aria-expanded", "true");
+  const name = $("#tw-cname"), sel = $("#tw-ctype");
+  let touched = false;
+  name.value = suggestTplName(t.datei, null);
+  name.oninput = () => { touched = true; };
+  sel.onchange = () => { if (!touched) name.value = suggestTplName(t.datei, types.find(x => x.name === sel.value)); };
+  $("#tw-ccancel").onclick = () => toggleCopy(t);
+  $("#tw-cgo").onclick = () => createCopy(t, types);
+  box.onkeydown = e => {
+    if (e.key === "Escape") toggleCopy(t);
+    if (e.key === "Enter" && e.target.tagName === "INPUT") createCopy(t, types);
+  };
+  name.focus(); name.select();
+}
+async function createCopy(t, types) {
+  if ($("#tw-cgo")?.disabled) return;
+  let name = $("#tw-cname").value.trim().replace(/\.lbx$/i, "").trim();
+  if (!name) return msg("#m-tw", "Bitte einen Dateinamen eingeben.", false);
+  if (/[\\/:*?"<>|]/.test(name)) return msg("#m-tw", 'Der Dateiname darf keines dieser Zeichen enthalten: \\ / : * ? " < > |', false);
+  name += ".lbx";
+  if (TPL.list.some(v => v.datei.toLowerCase() === name.toLowerCase())) return msg("#m-tw", `„${name}“ gibt es schon im Vorlagenordner.`, false);
+  const lagerart = $("#tw-ctype").value || null;
+  const b = $("#tw-cgo"); b.disabled = true;
+  let r;
+  try { r = await call("POST", "/api/vorlagen/kopie", {quelle: t.datei, name, lagerart}); }
+  catch (e) { if (TW === t) { msg("#m-tw", e.message, false); b.disabled = false; } return; }
+  await loadTemplates(r.datei || name);
+  if (r.lagerart) call("GET", "/api/stammdaten").then(renderMaster).catch(() => {});
+  const v = TPL.list.find(x => x.datei === (r.datei || name));
+  const typ = types.find(x => x.name === r.lagerart);
+  let hint = "";
+  if (typ) {
+    const need = [];
+    for (let i = 1; i <= typ.compartments; i++) need.push(`Section${i}`, `Footprint${i}`);
+    const missing = need.filter(f => !(v?.felder || []).includes(f));
+    hint = missing.length
+      ? `\nFür ${typ.compartments} Abteile fehlen noch die Felder: ${missing.join(", ")}.\nIm Editor als Datenbankfelder ergänzen (je Abteil Section = Bauteil, Footprint = Bauform), speichern, dann „Vorschau aktualisieren“.`
+      : `\nAlle Section-/Footprint-Felder für ${typ.compartments} Abteile sind schon vorhanden.`;
+  } else hint = "\nEine Lagerart kannst du später unter Stammdaten zuweisen.";
+  const text = `Kopie „${r.datei || name}“ angelegt${r.lagerart ? ` und der Lagerart „${r.lagerart}“ zugewiesen` : ""}.`
+    + `\nSie ist jetzt im P-touch Editor geöffnet${r.csv ? ` (mit Beispieldaten ${fname(r.csv)} verknüpft)` : ""}.` + hint;
+  if (TW && document.getElementById("m-tw")) msg("#m-tw", text); else msg("#m-tpl", text);
+}
+
+// ---------- Einstellungen (/api/einstellungen)
+let SET = null;
+const CUT_LABELS = {autocut: "Nach jedem Label schneiden", cutatend: "Nach dem letzten Label schneiden",
+                    halfcut: "Halbschnitt", cutmark: "Schnittmarken drucken",
+                    chainprint: "Kettendruck (kein Vorschub am Ende)", tailcut: "Ende abschneiden"};
+const PD_STATUS = {online: "Verbunden", offline: "Nicht erreichbar", token_ungueltig: "Token ungültig",
+                   nicht_konfiguriert: "Nicht eingerichtet"};
+const clearMsg = id => { $(id).className = "msg"; $(id).textContent = ""; };
+const settingsControls = () => $("#tab-settings").querySelectorAll("input, select, button");
+
+async function loadSettings() {
+  let r;
+  try { r = await call("GET", "/api/einstellungen"); }
+  catch (e) {
+    SET = null;
+    settingsControls().forEach(x => x.disabled = true);
+    msg("#m-settings", "Einstellungen können nicht geladen werden: " + e.message, false);
+    return;
+  }
+  clearMsg("#m-settings");
+  settingsControls().forEach(x => x.disabled = false);
+  SET = r; renderSettings();
+}
+function renderSettings() {
+  const p = SET.partdb || {}, d = SET.druck || {};
+  $("#s-url").value = p.url || "";
+  $("#s-token").value = "";
+  $("#s-token").placeholder = p.token_gesetzt ? `unverändert (${p.token_hinweis || "gesetzt"})` : "noch kein Token gesetzt";
+  $("#s-token-hint").textContent = p.token_gesetzt
+    ? `Gespeichert: ${p.token_hinweis || "(gesetzt)"} – Feld leer lassen = Token bleibt unverändert.`
+    : "Noch kein Token gespeichert – API-Token aus Part-DB (Benutzereinstellungen → API-Tokens) einfügen.";
+  $("#s-ssl").checked = p.ssl_pruefen !== false;
+  $("#s-pd-force").hidden = true; $("#s-pd-res").textContent = ""; $("#s-pd-res").className = "res";
+  $("#s-mode").value = d.modus === "helfer" ? "helfer" : "lokal";
+  modeHint();
+  $("#s-direct").checked = !!d.direktdruck;
+  fillPrinterSelect(d.drucker || "");
+  const opts = d.schnitt_optionen?.length ? d.schnitt_optionen : Object.keys(CUT_LABELS);
+  const sel = new Set(d.schnitt || []);
+  $("#s-cuts").innerHTML = opts.map((o, i) => {
+    const v = typeof o === "string" ? o : (o.wert ?? o.name ?? o.key ?? "");
+    const text = typeof o === "string" ? (CUT_LABELS[o] || o) : (o.text ?? o.label ?? CUT_LABELS[v] ?? v);
+    return `<label class="check"><input type="checkbox" id="s-cut-${i}" value="${esc(v)}"${sel.has(v) ? " checked" : ""}>
+      ${esc(text)} <span class="muted mono">${esc(v)}</span></label>`;
+  }).join("");
+  renderHelperInfo();
+}
+function modeHint() {
+  $("#s-mode-hint").textContent = $("#s-mode").value === "helfer"
+    ? "Direktdruck, exakte Vorschau und P-touch Editor laufen über den Druck-Helfer am Windows-PC (z. B. Server im Docker)."
+    : "b-PAC und P-touch Editor laufen auf dem Rechner, auf dem dieser Server läuft (nur unter Windows).";
+}
+$("#s-mode").onchange = modeHint;
+// Drucker: installierte Drucker aus Helfer-Status und /api/print-status, dazu der gespeicherte
+function fillPrinterSelect(current) {
+  const list = [...new Set([...(STATUS?.helfer?.drucker_liste || []), ...(PRINT.drucker || [])].filter(Boolean))];
+  const opts = [`<option value="">Aus der Vorlage (kein fester Drucker)</option>`]
+    .concat(list.map(n => `<option value="${esc(n)}">${esc(n)}</option>`));
+  if (current && !list.includes(current)) opts.push(`<option value="${esc(current)}">${esc(current)} (nicht gefunden)</option>`);
+  $("#s-printer").innerHTML = opts.join("");
+  $("#s-printer").value = current || "";
+  $("#s-printer-hint").textContent = list.length ? `${list.length} Drucker installiert.`
+    : "Keine Druckerliste verfügbar – erst wenn Helfer bzw. b-PAC erreichbar ist.";
+}
+$("#s-token-show").onclick = () => {
+  const t = $("#s-token"), show = t.type === "password";
+  t.type = show ? "text" : "password";
+  $("#s-token-show").textContent = show ? "Verbergen" : "Anzeigen";
+  $("#s-token-show").setAttribute("aria-pressed", String(show));
+};
+function partdbBody() {
+  const url = $("#s-url").value.trim();
+  if (!/^https?:\/\/\S+$/i.test(url)) throw new Error("Bitte eine URL mit http:// oder https:// eingeben.");
+  return {url, token: $("#s-token").value.trim() || null, ssl_pruefen: $("#s-ssl").checked};
+}
+function pdResult(text, ok) { const r = $("#s-pd-res"); r.className = "res " + (ok ? "ok" : "err"); r.textContent = text; }
+$("#s-pd-test").onclick = async () => {
+  const b = $("#s-pd-test");
+  let body;
+  try { body = partdbBody(); } catch (e) { return pdResult(e.message, false); }
+  b.disabled = true; $("#s-pd-res").className = "res"; $("#s-pd-res").textContent = "Teste Verbindung …";
+  try {
+    const r = await call("POST", "/api/einstellungen/partdb/test", body);
+    if (r.ok) pdResult(`✓ ${PD_STATUS.online}${r.version ? " – Part-DB " + r.version : ""}${r.benutzer ? ", Benutzer " + r.benutzer : ""}`, true);
+    else pdResult(`✗ ${PD_STATUS[r.status] || r.status || "Fehler"}${r.detail ? ": " + r.detail : ""}`, false);
+  } catch (e) { pdResult("✗ " + e.message, false); }
+  b.disabled = false;
+};
+async function savePartdb(ohneTest) {
+  let body;
+  try { body = partdbBody(); } catch (e) { return msg("#m-set-partdb", e.message, false); }
+  const b = $("#s-pd-save"); b.disabled = true;
+  $("#s-pd-res").className = "res"; $("#s-pd-res").textContent = ohneTest ? "Speichere …" : "Teste und speichere …";
+  try {
+    SET = await call("PUT", "/api/einstellungen/partdb", {...body, ohne_test: !!ohneTest});
+    renderSettings();
+    msg("#m-set-partdb", ohneTest ? "Gespeichert (ohne Verbindungstest)." : "Verbindung geprüft und gespeichert.");
+    afterSettingsChange();
+  } catch (e) {
+    $("#s-pd-res").textContent = "";
+    msg("#m-set-partdb", "Nicht gespeichert: " + e.message, false);
+    $("#s-pd-force").hidden = !!ohneTest;
+  }
+  b.disabled = false;
+}
+$("#set-partdb").onsubmit = e => { e.preventDefault(); savePartdb(false); };
+$("#s-pd-force").onclick = () => {
+  if (confirm("Ohne erfolgreichen Verbindungstest speichern?\n\nDanach funktionieren Part-DB-Funktionen erst, wenn URL und Token stimmen.")) savePartdb(true);
+};
+$("#set-druck").onsubmit = async e => {
+  e.preventDefault();
+  const b = $("#s-pr-save"); b.disabled = true;
+  try {
+    SET = await call("PUT", "/api/einstellungen/druck", {
+      modus: $("#s-mode").value, direktdruck: $("#s-direct").checked, drucker: $("#s-printer").value,
+      schnitt: [...$("#s-cuts").querySelectorAll("input:checked")].map(x => x.value)});
+    renderSettings();
+    msg("#m-set-druck", "Druckeinstellungen gespeichert.");
+    afterSettingsChange();
+  } catch (e) { msg("#m-set-druck", "Nicht gespeichert: " + e.message, false); }
+  b.disabled = false;
+};
+function renderHelperInfo() {
+  const h = STATUS?.helfer, mode = h?.modus || SET?.druck?.modus || "lokal", ht = SET?.helfer || {};
+  const rows = [["Modus", mode === "helfer" ? "Helfer (Windows-PC per Druck-Helfer)" : "lokal (dieser PC) – kein Helfer nötig"]];
+  if (!STATUS) rows.push(["Verbindung", "unbekannt" + (STATUS_ERR ? ` – ${STATUS_ERR}` : "")]);
+  else if (mode === "helfer") {
+    rows.push(["Verbindung", h.verbunden ? "✓ verbunden" : "✗ nicht verbunden – Helfer am Windows-PC starten"]);
+    if (h.verbunden) rows.push(["Rechner", h.rechner || "–"], ["Verbunden seit", fmtTime(h.seit)], ["Version", h.version || "–"]);
+  }
+  if (h?.bpac !== undefined && (mode === "lokal" || h.verbunden)) rows.push(["b-PAC", h.bpac ? "installiert" : "nicht verfügbar"]);
+  if (mode === "helfer" && h?.verbunden) {
+    // Felder aus dem Vorlagen-Abgleich – ältere Helfer/Server liefern sie evtl. noch nicht
+    const v = h.vorlagen && typeof h.vorlagen === "object" ? h.vorlagen : null;
+    if (h.drucker_modell !== undefined) rows.push(["Druckermodell", h.drucker_modell || "nicht eingestellt"]);
+    if (v) {
+      rows.push(["Vorlagen-Ordner", v.ordner ? `${v.ordner}${h.rechner ? " (auf " + h.rechner + ")" : ""}` : "nicht eingestellt – Server-Vorlagen werden genutzt"]);
+      if (v.ordner) rows.push(["Vorlagen", `${v.anzahl ?? "?"} Datei(en)`], ["Letzter Abgleich", v.abgeglichen ? fmtTime(v.abgeglichen) : "noch keiner"]);
+      if (v.fehler) rows.push(["Abgleich-Fehler", "⚠ " + v.fehler]);
+      if (v.hinweis) rows.push(["Hinweis", v.hinweis]);
+      if (Array.isArray(v.ausstehend) && v.ausstehend.length)
+        rows.push(["Ausstehende Löschungen", `${v.ausstehend.length} – im Reiter Vorlagen bestätigen`]);
+    }
+  }
+  rows.push(["Helfer-Token", ht.token_gesetzt ? (ht.token_hinweis || "gesetzt") : "noch keiner – wird beim Herunterladen des Helfers erzeugt"]);
+  $("#s-helper-info").innerHTML = rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
+}
+function helperYaml(token) {
+  const h = STATUS?.helfer || {}, v = h.vorlagen && typeof h.vorlagen === "object" ? h.vorlagen : {};
+  const ordner = v.ordner || "C:\\Users\\Name\\Documents\\Labeltool-Vorlagen";
+  return [
+    "# helfer.yaml – am Windows-PC neben helfer.bat (oder \"helfer.bat einrichten\")",
+    `server: ${JSON.stringify(location.origin)}`,
+    `token: ${JSON.stringify(token)}`,
+    `vorlagen_ordner: '${ordner.replace(/'/g, "''")}'   # Quelle der .lbx-Vorlagen auf dem PC`,
+    `drucker_modell: ${JSON.stringify(h.drucker_modell || "PT-P710BT")}`,
+    `drucker: ${JSON.stringify(SET?.druck?.drucker || "")}   # leer = passend zum Modell suchen`,
+  ].join("\n");
+}
+$("#s-newtoken").onclick = async () => {
+  const h = STATUS?.helfer, connected = h?.modus === "helfer" && h.verbunden;
+  const text = "Neuen Helfer-Token erzeugen?\n\n"
+    + (SET?.helfer?.token_gesetzt ? "Der bisherige Token wird sofort ungültig" : "Es wird ein Token erzeugt")
+    + (connected ? ` – der verbundene Helfer${h.rechner ? " (" + h.rechner + ")" : ""} wird getrennt` : "")
+    + ".\nDanach den neuen Token in helfer.yaml am Windows-PC eintragen und den Helfer neu starten.";
+  if (!confirm(text)) return;
+  const b = $("#s-newtoken"); b.disabled = true;
+  try {
+    const r = await call("POST", "/api/einstellungen/helfer/token");
+    if (!r.token) throw new Error("Server hat keinen Token geliefert.");
+    const {token, ...rest} = r;
+    if (rest.partdb && rest.druck) SET = rest; else if (SET) SET.helfer = rest.helfer || {token_gesetzt: true, token_hinweis: ""};
+    $("#s-tok-out").value = token;
+    $("#s-yaml").textContent = helperYaml(token);
+    $("#s-secret").hidden = false;
+    clearMsg("#m-set-helfer");
+    renderHelperInfo();
+    $("#s-tok-out").focus(); $("#s-tok-out").select();
+    afterSettingsChange();
+  } catch (e) { msg("#m-set-helfer", "Token nicht erzeugt: " + e.message, false); }
+  b.disabled = false;
+};
+// Kopieren: Clipboard-API (nur https/localhost), sonst execCommand, sonst markieren zum manuellen Kopieren
+async function copyText(text, btn, selectEl) {
+  let ok = false;
+  try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); ok = true; } } catch (e) { /* Fallback */ }
+  if (!ok) {
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.setAttribute("readonly", ""); ta.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+    document.body.appendChild(ta); ta.select();
+    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    ta.remove();
+  }
+  const old = btn.dataset.label ??= btn.textContent;
+  btn.textContent = ok ? "Kopiert ✓" : "Bitte mit Strg+C kopieren";
+  if (!ok && selectEl) {
+    if (selectEl.select) { selectEl.focus(); selectEl.select(); }
+    else { const rg = document.createRange(); rg.selectNodeContents(selectEl); const s = getSelection(); s.removeAllRanges(); s.addRange(rg); }
+  }
+  setTimeout(() => { btn.textContent = old; }, 2500);
+}
+$("#s-tok-copy").onclick = e => copyText($("#s-tok-out").value, e.currentTarget, $("#s-tok-out"));
+$("#s-yaml-copy").onclick = e => copyText($("#s-yaml").textContent, e.currentTarget, $("#s-yaml"));
+$("#s-secret-hide").onclick = () => {
+  $("#s-secret").hidden = true; $("#s-tok-out").value = ""; $("#s-yaml").textContent = "";
+  $("#s-newtoken").focus();
+};
+
+loadStatus();
+init().catch(e => msg("#m-new", "Start fehlgeschlagen: " + e.message, false));
+</script>
+</body>
+</html>

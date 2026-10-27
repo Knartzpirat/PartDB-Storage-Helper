@@ -1,0 +1,113 @@
+# Konfiguration für den Docker-Container (wird beim ersten Start nach /config/config.yaml kopiert).
+# Part-DB-URL/Token und Druckeinstellungen am besten im Reiter "Einstellungen" der Weboberfläche setzen
+# (gespeichert in /config/einstellungen.yaml, hat Vorrang vor dieser Datei).
+
+partdb:
+  url: ""                            # leer = Umgebungsvariable PARTDB_URL, z. B. "http://192.168.1.10:8080" (ohne /api)
+  token: ""                          # leer = Umgebungsvariable PARTDB_TOKEN
+  ssl_pruefen: true                  # bei selbstsigniertem Zertifikat ggf. false
+
+output:
+  # Volume /ausgabe: hierhin schreibt das Tool die CSVs.
+  ordner: "/ausgabe"
+  encoding: "utf-8-sig"   # Falls Umlaute im P-touch Editor falsch sind: "cp1252" probieren
+  trennzeichen: ","
+
+labels:
+  tag: "noLabel"                          # Part-DB-Tag für "braucht Inhaltslabel"
+  namenslabel_datei: "Namenslabels.csv"   # 24-mm-Box-Label (Spalten wie altes Sheet 'exportLabel')
+  standard_felder: 6                      # Felder für Boxen ohne bekannte Lagerart
+  kategorie_quelle: "part"                # "part" = häufigste Bauteil-Kategorie, "box" = Lagerinhalt
+  # Fachnummer aus der Beschreibung des Part-Lots, z. B. "Fach 3" oder "F3"
+  fach_regex: '(?i)^\s*(?:fach|f)\s*[-:#]?\s*(\d+)'
+
+  # Volume /vorlagen: P-touch-Vorlagen (.lbx) hier hineinkopieren.
+  vorlagen_ordner: "/vorlagen"
+  box_vorlage: "Layout_Lagerbox_PartDB.lbx"     # 24-mm-Box-Label
+
+# STARTWERTE – nach dem ersten Start im Reiter "Stammdaten" bearbeiten
+# (gespeichert in stammdaten.yaml, Änderungen hier wirken dann nicht mehr).
+
+# Boxfarben (Filament der 3D-gedruckten Box): Name -> Anzeigefarbe in der Oberfläche.
+farben:
+  Hell Blau:   "#8ecae6"
+  Blau:        "#2a6fdb"
+  Blaugrau:    "#6c7a89"
+  Weiß:        "#f5f5f2"
+  Gelb:        "#f2c200"
+  Orange:      "#f07f1a"
+  Rot:         "#d0312d"
+  Grün:        "#2e8b57"
+  Grasgrün:    "#6abe30"
+  Schwarz:     "#1f1f1f"
+  Mittelgrau:  "#8a8a8a"
+  Hellgrau:    "#c8c8c8"
+  Dunkelgrau:  "#4a4a4a"
+  Lila:        "#7d4cdb"
+  Braun:       "#8b5a2b"
+
+# Ersetzt das Sheet 'Lagerinhalt'. Schlüssel = Kürzel im Boxnamen, farbe = Name aus farben.
+kategorien:
+  M1.6:   { name: "M1.6",            farbe: "Hell Blau" }
+  M2:     { name: "M2",              farbe: "Blau" }
+  M2.5:   { name: "M2.5",            farbe: "Blaugrau" }
+  M3:     { name: "M3",              farbe: "Weiß" }
+  M4:     { name: "M4",              farbe: "Gelb" }
+  M5:     { name: "M5",              farbe: "Orange" }
+  M6:     { name: "M6",              farbe: "Rot" }
+  M8:     { name: "M8",              farbe: "Grün" }
+  M10:    { name: "M10",             farbe: "Grasgrün" }
+  ME:     { name: "Mechaniken",      farbe: "Schwarz" }
+  3D:     { name: "3D Drucker",      farbe: "Mittelgrau" }
+  EL:     { name: "Elektronik",      farbe: "Hellgrau" }
+  MIC:    { name: "Microcontroller", farbe: "Dunkelgrau" }
+  SMDR:   { name: "SMD Widerstand",  farbe: "Hellgrau" }
+  SMDC:   { name: "SMD Kondensator", farbe: "Gelb" }
+  SMDL:   { name: "SMD Spule",       farbe: "Blau" }
+  SMDS:   { name: "SMD Sensoren",    farbe: "Lila" }
+  SMDP:   { name: "SMD Parts",       farbe: "Schwarz" }
+  SMDICs: { name: "SMD ICs",         farbe: "Rot" }
+  Fila:   { name: "Filament",        farbe: "Weiß" }
+  Holz:   { name: "Holzschrauben",   farbe: "Braun" }
+
+# Ersetzt das Sheet 'Lagerart'. abteile = Vorbelegung bei "Neue Box" und Anzahl Bauteile
+# auf dem 12-mm-Label, lbx = P-touch-Vorlage, datei = CSV (weglassen = Inhalt_<Name>.csv).
+lagerarten:
+  WinBin1: { abteile: 1, datei: "Inhalt_WinBin1.csv", lbx: "PartDB_Window-Div-Bin-1.lbx" }
+  WinBin2: { abteile: 2, datei: "Inhalt_WinBin2.csv", lbx: "PartDB_Window-Div-Bin-2.lbx" }
+  WinBin3: { abteile: 3, datei: "Inhalt_WinBin3.csv", lbx: "PartDB_Window-Div-Bin-3.lbx" }
+  WinBin4: { abteile: 4, datei: "Inhalt_WinBin4.csv" }
+  WinBin5: { abteile: 5, datei: "Inhalt_WinBin5.csv", lbx: "PartDB_Window-Div-Bin-5.lbx" }
+  WinBin6: { abteile: 6, datei: "Inhalt_WinBin6.csv" }
+  SMD15:   { abteile: 1, datei: "Inhalt_SMD15.csv", lbx: "PartDB_SMD15.lbx" }
+  SMD20:   { abteile: 1, datei: "Inhalt_SMD20.csv" }
+  SMD25:   { abteile: 1, datei: "Inhalt_SMD25.csv" }
+  SMD30:   { abteile: 1, datei: "Inhalt_SMD30.csv" }
+  SMD35:   { abteile: 1, datei: "Inhalt_SMD35.csv" }
+  Rack:    { abteile: 1 }
+  3U2x1_1: { abteile: 1 }
+  3U2x1_2: { abteile: 2 }
+  3U2x1_3: { abteile: 3, lbx: "PartDB_3U-3.lbx" }
+  3U2x1_4: { abteile: 4 }
+  3U2x1_5: { abteile: 5 }
+  3U3x1_1: { abteile: 1 }
+  6U5x1_1: { abteile: 1 }
+  9U2x3_1: { abteile: 1 }
+  9U2x4_1: { abteile: 1 }
+
+# Druck im Container: immer über den Druck-Helfer auf dem Windows-PC (b-PAC + P-touch Editor dort).
+druck:
+  modus: helfer                     # "helfer" = Windows-Funktionen über den verbundenen Druck-Helfer
+  direktdruck: true
+  drucker: ""                       # leer = Drucker aus der Vorlage, sonst z. B. "Brother PT-P710BT"
+  schnitt: [autocut, cutatend]      # möglich: autocut, halfcut, chainprint, cutatend, tailcut, cutmark
+
+helfer:
+  token: ""                         # im Reiter "Einstellungen" erzeugen ("Helfer-Token neu erzeugen")
+
+server:
+  host: "0.0.0.0"                   # im Container immer alle Schnittstellen (Port-Freigabe macht Docker)
+  port: 8765
+
+status_datei: "status.json"
+stammdaten_datei: "stammdaten.yaml"
