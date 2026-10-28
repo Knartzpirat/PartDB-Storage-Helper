@@ -1,296 +1,346 @@
 # Part-DB Labeltool
 
-Tool für Lagerboxen in Part-DB und Labels für den Brother PT-P710BT.
-Ersetzt die beiden Google Sheets und Apps Scripts.
+Webanwendung, mit der du Lagerboxen in [Part-DB](https://github.com/Part-DB/Part-DB-server) anlegst und dafür Etiketten
+auf einem Brother-P-touch-Drucker druckst – ein **Box-Label** (24 mm) für jede Box und ein **Bauteil-Label** (12 mm)
+mit den Bauteilen, die darin liegen. Die Layouts sind normale P-touch-Editor-Vorlagen (`.lbx`), die du selbst gestaltest.
 
-Zwei Betriebsarten:
+Entwickelt und getestet mit dem **Brother PT-P710BT**; andere P-touch-/QL-Modelle, die der P-touch Editor kennt,
+sind auswählbar.
 
-- **Lokal auf dem Windows-PC** (`start.bat`, `druck.modus: lokal`): Server, b-PAC und P-touch Editor im selben Prozess.
-  ```
-  Part-DB (Unraid, LAN)  <── REST-API ──>  Labeltool (PC, Browser-UI)  ──CSV──>  P-touch Editor  ──>  PT-P710BT
-  ```
-- **Server im Docker (Unraid) + Druck-Helfer am PC** (`druck.modus: helfer`): die Oberfläche ist von jedem Gerät im LAN
-  erreichbar, gedruckt wird über den Helfer auf dem PC, an dem der Drucker hängt. Siehe
-  [Betrieb im Docker (Unraid)](#betrieb-im-docker-unraid) und [Druck-Helfer unter Windows](#druck-helfer-unter-windows).
-  ```
-  Browser ──HTTP──> Labeltool (Docker, Unraid) ──REST──> Part-DB
-                         ▲ WebSocket (vom PC aufgebaut, Token)
-                         │
-          Druck-Helfer (Windows-PC, b-PAC, P-touch Editor) ──USB──> PT-P710BT
-  ```
+## Funktionen
 
-## Einrichtung
+- **Boxen anlegen:** Inhalt, Lagerart und Anzahl wählen – das Tool vergibt fortlaufende Namen (z. B. `MIC-2.0021`),
+  legt die Lagerorte per API in Part-DB an und sagt dir, in welcher Farbe die Box gedruckt/gewählt werden soll.
+- **Box-Labels:** Name, Inhalt, Farbe, Abteile, Lagerart und zwei DataMatrix-Codes (Part-DB-Barcode `S0123` und Name).
+- **Bauteil-Labels:** Boxen, deren Bauteile in Part-DB einen Tag (Standard `noLabel`) tragen, bekommen ein Label mit
+  *allen* Bauteilen der Box, auf Wunsch fachgenau. Nach dem Druck entfernt das Tool den Tag.
+- **Drucken:** über CSV + P-touch Editor oder **direkt** über die Brother b-PAC-Schnittstelle.
+- **Vorlagen-Werkzeuge:** Übersicht mit Prüfungen, **exakte Vorschau** mit Beispiel- oder Echtdaten, Vorlage im
+  P-touch Editor bearbeiten, neue Vorlage aus Kopie.
+- **Stammdaten:** Inhalte (Kürzel, Name, Boxfarbe), Lagerarten (Abteile, Vorlage) und Boxfarben-Palette – mit
+  doppelter Nachfrage beim Löschen und Rückgängig.
+- **Statusanzeige** für Part-DB, Druck-Helfer und Drucker; Part-DB-Adresse und API-Token in der Oberfläche änderbar.
 
-1. **API in Part-DB freischalten:** Benutzer/Gruppe → Berechtigungen → *Verschiedenes → API* (Zugriff + Tokens erstellen).
-   Dann in den Benutzereinstellungen ein API-Token mit Schreibrechten erzeugen.
-2. **Python 3.10+** installieren (python.org, Haken bei „Add to PATH“).
-3. `start.bat` doppelklicken. Beim ersten Start wird `config.yaml` angelegt und im Editor geöffnet:
-   `partdb.url`, `partdb.token` und `output.ordner` eintragen. Danach `start.bat` erneut starten.
-   Der Browser öffnet sich auf `http://127.0.0.1:8765`.
-4. **P-touch-Vorlagen:** `labels.vorlagen_ordner` in `config.yaml` zeigt auf den Ordner mit deinen `.lbx`-Dateien
-   (derzeit `BeispielEtiketten`). Das Box-Label steht unter `labels.box_vorlage`, die Bauteil-Vorlagen
-   werden je Lagerart im Reiter *Stammdaten* gewählt. Von Hand verknüpfen musst du nichts: Das Tool legt beim Drucken
-   eine Kopie der Vorlage unter `<Ausgabeordner>/Vorlagen/` an, die schon auf die richtige CSV zeigt, und öffnet sie
-   im P-touch Editor. Layout-Änderungen machst du immer in der Originalvorlage, denn die Kopie wird jedes Mal neu erzeugt.
+## Aufbau
 
-## Ablauf
+Druck und exakte Vorschau brauchen Windows (P-touch Editor, b-PAC). Deshalb gibt es zwei Betriebsarten:
 
-| Label | Band | Vorlage | CSV |
-|---|---|---|---|
-| Box-Label (Name, Inhalt, Farbe, Abteile, Lagerart, 2× DataMatrix) | 24 mm | `Layout_Lagerbox_PartDB.lbx` | `Namenslabels.csv` |
-| Bauteil-Label (ein Feld je Abteil) | 12 mm | je Lagerart, z. B. `PartDB_Window-Div-Bin-2.lbx` | `Inhalt_<Lagerart>.csv` |
-
-**Neue Box → Box-Label:** Inhalt und Lagerart wählen (die Abteile kommen aus der Lagerart), Anzahl angeben, „In Part-DB
-anlegen“. Das wiederholst du für alle Boxen, die vor dir liegen. Darunter stehen dann alle neuen Boxen ohne Label.
-**Box-Labels drucken** schreibt die CSV und öffnet die 24-mm-Vorlage im P-touch Editor. Dort alle Datensätze drucken,
-die Labels aufkleben und im Tool „Gedruckt ✓“ klicken. Ab jetzt kannst du in Part-DB Bauteile den Boxen zuweisen.
-Unter „Alle Boxen“ lässt sich jedes Box-Label nachdrucken.
-
-**Bauteil-Labels 12 mm:** Bauteile in Part-DB anlegen, Lagerort setzen, Tag `noLabel` vergeben.
-Das Tool sammelt alle Boxen mit mindestens einem getaggten Teil und baut das Label aus *allen* Teilen der Box.
-„CSVs schreiben“ → je Lagerart „In P-touch öffnen“ → drucken → „Gedruckt – Tags entfernen“. Entfernt wird der Tag
-nur bei den Teilen, die im Export waren. Später getaggte Teile bleiben in der Liste.
-
-## Stammdaten (Inhalte und Lagerarten)
-
-Im Reiter **Stammdaten** lassen sich Boxfarben, Inhalte (Kürzel, Name, Boxfarbe) und Lagerarten
-(Abteile, P-touch-Vorlage, CSV-Datei) anlegen und ändern.
-
-- **Boxfarben** sind eine feste Palette (Name → Anzeigefarbe). Inhalte wählen ihre Farbe nur daraus,
-  deshalb sieht z. B. „Hellblau“ überall gleich aus. Umbenennen ändert die Farbe bei allen Inhalten mit.
-  Eine Farbe, die noch ein Inhalt nutzt, lässt sich nicht löschen. Bestehende Boxen in Part-DB werden der Palette
-  unabhängig von Groß-/Kleinschreibung und Leerzeichen zugeordnet („Hell Blau“ = „Hellblau“).
-- **Abteile** einer Lagerart werden bei „Neue Box“ automatisch eingetragen. Ein abweichender Wert bleibt möglich.
-  Die Zahl bestimmt auch, wie viele Bauteile auf das 12-mm-Label kommen (Section1…n). Die CSV hat trotzdem immer
-  mindestens 6 Section-/Footprint-Spalten, weil deine Vorlagen diese Felder kennen.
-- **Löschen** fragt zweimal nach (in der Zeile, dann als Dialog) und warnt, wenn Boxen in Part-DB den Eintrag noch nutzen.
-- **Rückgängig** macht die letzte Änderung rückgängig (Anlegen, Ändern oder Löschen). Die letzten 50 Schritte
-  bleiben auch nach einem Neustart erhalten (`stammdaten.verlauf.json`).
-- Gespeichert wird in `stammdaten.yaml`. Die Einträge in `config.yaml` sind nur Startwerte für den allerersten Start.
-- Umbenennen eines Kürzels oder einer Lagerart ändert keine bestehenden Boxen in Part-DB.
-
-## Vorlagen (Reiter „Vorlagen“)
-
-- **Übersicht** aller `.lbx` im Vorlagenordner: Band × Länge, genutzte Felder, welche Lagerart sie nutzt, Warnungen
-  (z. B. Vorlage hat weniger Section-Felder als die Lagerart Abteile, Spalten, die das Tool nicht liefert).
-- **Vorschau mit Beispieldaten:** „Worst Case“ (lange Werte), „Text aus der Vorlage“ oder eine echte Box. Die Werte
-  lassen sich direkt bearbeiten, die Vorschau folgt live. Mit b-PAC ist sie **exakt** (wie gedruckt), ohne b-PAC eine **Skizze**.
-- **Im P-touch Editor bearbeiten:** verknüpft die Originalvorlage mit einer Beispiel-CSV (`<Ausgabe>/Beispiele/`) und
-  öffnet sie. Beim ersten Mal wird ein Backup unter `<Vorlagenordner>/.backup/` angelegt. Ändern, speichern, im Tool
-  „Vorschau aktualisieren“.
-- **Kopie als neue Vorlage:** z. B. aus `PartDB_Window-Div-Bin-5.lbx` eine `…-6.lbx` für WinBin6 machen. Die Lagerart wird
-  gleich zugewiesen (rückgängig machbar), im Editor fehlende `Section…`-Felder ergänzen und verknüpfen.
-- Vorschau-Knöpfe gibt es auch bei den Box-Labels und in jeder Karte unter „Bauteil-Labels 12 mm“.
-
-## Fächer
-
-Damit ein Teil im richtigen Feld landet, in der **Beschreibung des Part-Lots** `Fach 3` oder `F3` eintragen.
-Teile ohne Fach füllen die freien Felder alphabetisch auf. Die UI warnt bei zu vielen Teilen oder doppelt belegten Fächern.
-
-## Datenformat in Part-DB
-
-Neue Lagerorte bekommen den Kommentar im bisherigen Format, ergänzt um die Lagerart:
+**A – Server im Docker + Druck-Helfer am Windows-PC (empfohlen)**
 
 ```
-Lagerinhalt: Microcontroller Lagerfarbe: Dunkelgrau Lagerabteile: 2 Lagerart: WinBin2
+Browser (beliebiges Gerät) ──HTTP──> Labeltool-Server (Docker) ──REST-API──> Part-DB
+                                         ▲  WebSocket, vom PC aus aufgebaut
+                                         │
+          Druck-Helfer (Windows-PC: b-PAC, P-touch Editor) ──USB──> Etikettendrucker
 ```
 
-Bestehende Boxen werden ebenfalls gelesen. Dort kommt die Lagerart aus dem Parameter
-(Parametername = Boxtyp), so wie es dein altes Script angelegt hat.
+Die Oberfläche ist im ganzen LAN erreichbar. Der Druck-Helfer läuft auf dem PC, an dem der Drucker hängt, verbindet
+sich selbst zum Server (keine Firewall-Freigabe am PC nötig) und hält einen **Vorlagen-Ordner auf dem PC** mit dem
+Server abgeglichen. Ohne verbundenen Helfer funktioniert alles außer Direktdruck, exakter Vorschau (dann eine Skizze)
+und dem Öffnen im P-touch Editor.
 
-## Konfiguration
+**B – Alles lokal auf einem Windows-PC**
 
-`config.yaml` ersetzt die Sheets `Lagerinhalt` (→ `kategorien`) und `Lagerart` (→ `boxtypen`).
-Den Lagerzähler gibt es nicht mehr. Die nächste Nummer ermittelt das Tool aus den vorhandenen Namen in Part-DB.
+Server, b-PAC und P-touch Editor laufen in einem Prozess (`start.bat`). Kein Docker nötig.
 
-- `standard_felder`: Felder für Boxen, deren Lagerart nicht in den Stammdaten steht.
-- `kategorie_quelle`: `part` = häufigste Bauteil-Kategorie der Box (wie bisher), `box` = Lagerinhalt.
-- `encoding`: Wenn Umlaute (Grün, Weiß) im P-touch Editor falsch erscheinen, `cp1252` eintragen.
+## Voraussetzungen
 
-## Direktdruck (optional, b-PAC)
+- **Part-DB** mit aktivierter API und einem API-Token mit Schreibrechten:
+  Benutzer/Gruppe → Berechtigungen → *Verschiedenes → API* (Zugriff und Tokens erstellen erlauben), dann in den
+  Benutzereinstellungen unter *API-Token* ein Token anlegen.
+- **Zum Drucken** ein Windows-PC mit
+  - Brother-Druckertreiber und **P-touch Editor** (für eigene Vorlagen und den CSV-Druckweg),
+  - optional der **b-PAC Client Component (64-bit)** für Direktdruck und exakte Vorschau – siehe
+    [Direktdruck und exakte Vorschau](#direktdruck-und-exakte-vorschau),
+  - Python 3.11 oder neuer ([python.org](https://www.python.org/downloads/) mit „Add to PATH“ oder Microsoft Store).
+- **Für Betriebsart A** ein Rechner mit Docker (z. B. Unraid, Synology, Linux-Server).
 
-Statt über den P-touch Editor kann das Tool direkt auf den PT-P710BT drucken. Dann gibt es zusätzlich
-„Direkt drucken“-Knöpfe, und der CSV-Weg bleibt als Ausweichweg erhalten.
+## Installation
 
-1. **Brother b-PAC Client Component** installieren:
-   <https://support.brother.com/g/s/es/dev/en/bpac/download/index.html>
-   → Abschnitt **„b-PAC Client Component Only“** → neueste Version, **64-bit** (`.msi`).
-   Die Bitness muss zu Python passen (hier 64-bit). Die 32-bit-Version funktioniert mit dem Tool nicht.
-   Den SDK-Download brauchst du nicht. Der PT-P710BT wird ab b-PAC 3.2 unterstützt
-   ([Modellliste](https://support.brother.com/g/s/es/dev/en/bpac/environment/index.html)).
-2. Den PT-P710BT per USB anschließen. Er muss in Windows unter *Drucker & Scanner* auftauchen (Treiber von Brother).
-3. In `config.yaml` unter `druck:` einstellen:
-   - `direktdruck: true`
-   - `drucker:` leer lassen (Drucker aus der Vorlage) oder exakt den Windows-Namen eintragen
-   - `schnitt:` z. B. `[autocut, cutatend]`
+### Docker
 
-Die UI zeigt neben den Knöpfen, ob der Direktdruck bereit ist oder was fehlt.
-
-Gedruckt wird mit deinen Originalvorlagen, sie werden dabei nicht gespeichert. Das Tool liest aus der Vorlage,
-welches Objekt welche CSV-Spalte zeigt, und setzt diese Texte für jedes Label. Bauteil-Labels von Boxen, deren
-Lagerart keine Vorlage hat, werden übersprungen und gemeldet. Tags werden erst mit „Gedruckt – Tags entfernen“ entfernt.
-
-## Betrieb im Docker (Unraid)
-
-Der Server läuft als Container, der Drucker bleibt am Windows-PC und wird über den
-[Druck-Helfer](#druck-helfer-unter-windows) angesprochen. Ohne verbundenen Helfer funktioniert alles außer Direktdruck,
-exakter Vorschau (dann SVG-Skizze) und „In P-touch öffnen“.
-
-> **Sicherheit:** Die Weboberfläche hat **keine Anmeldung**. Jeder, der den Port erreicht, kann Boxen in Part-DB anlegen
-> und Einstellungen ändern. Nur im LAN betreiben, den Port **nicht** ins Internet freigeben (kein Port-Forwarding,
-> Reverse-Proxy nur mit eigener Authentifizierung). Part-DB-Token und Helfer-Token liegen im Klartext in
-> `/config/einstellungen.yaml` (Unraid: `/mnt/user/appdata/labeltool/config/einstellungen.yaml`).
-
-### Image (fertig von GitHub)
-
-GitHub baut das Image bei jedem Push auf `main` automatisch (Workflow `.github/workflows/docker.yml`: erst Tests,
-dann Build) und legt es in der GitHub Container Registry ab:
+Das Image wird von GitHub Actions gebaut und liegt in der GitHub Container Registry:
 
 ```
 ghcr.io/knartzpirat/partdb-storage-helper:latest
 ```
 
-Heißt das Repository anders, lautet der Name `ghcr.io/<github-benutzer>/<repository>` (klein geschrieben) –
-dann in `docker-compose.yml` bzw. `docker/labeltool.xml` anpassen. Versionen: ein Git-Tag `v1.2.3` erzeugt zusätzlich
-`:1.2.3` und `:1.2`.
+**docker run:**
 
-**Privates Repository:** Das Image ist dann ebenfalls privat. Entweder auf GitHub unter *Packages →
-partdb-storage-helper → Package settings → Change visibility* nur das Image öffentlich stellen (der Quellcode bleibt
-privat, im Image stecken keine Zugangsdaten), oder Unraid einmal anmelden:
+```bash
+docker run -d --name labeltool \
+  --restart unless-stopped \
+  -p 8765:8765 \
+  -e TZ=Europe/Berlin \
+  -v labeltool_config:/config \
+  -v labeltool_ausgabe:/ausgabe \
+  -v labeltool_vorlagen:/vorlagen \
+  ghcr.io/knartzpirat/partdb-storage-helper:latest
 ```
-docker login ghcr.io -u Knartzpirat
-```
-Als Passwort ein GitHub-Token (*Settings → Developer settings → Personal access tokens*) mit nur `read:packages`.
 
-1. **Variante A – Compose (Plugin „Docker Compose Manager“):** neuen Stack mit `docker-compose.yml` aus dem Projekt
-   anlegen und „Compose Up“. Im Terminal: `docker compose pull && docker compose up -d`.
-2. **Variante B – Unraid-Template:** `docker/labeltool.xml` nach
-   `/boot/config/plugins/dockerMan/templates-user/my-labeltool.xml` kopieren und unter
-   *Docker → Add Container → Template „labeltool“* anlegen.
-
-**Update:** im Docker-Tab „Check for Updates“ → „Update“ (bzw. `docker compose pull && docker compose up -d`).
-
-**Selbst bauen** (ohne GitHub): Projekt nach `/mnt/user/appdata/labeltool/src` kopieren und
-`docker build -t labeltool:latest /mnt/user/appdata/labeltool/src` – dann im Template/Compose `labeltool:latest`
-als Image eintragen (in `docker-compose.yml` den `build:`-Block einkommentieren).
-
-Das Image läuft als Benutzer `99:100` (Unraid `nobody:users`). Andere IDs: Build-Argumente `PUID`/`PGID`
-(`docker build --build-arg PUID=1000 --build-arg PGID=1000 …`).
-
-### Volumes, Port und Umgebungsvariablen
-
-| Container | Unraid (Vorschlag) | Inhalt |
-|---|---|---|
-| `/config` | `/mnt/user/appdata/labeltool/config` | `config.yaml`, `einstellungen.yaml` (Tokens!), `stammdaten.yaml`, `stammdaten.verlauf.json`, `status.json` |
-| `/ausgabe` | `/mnt/user/appdata/labeltool/ausgabe` | CSV-Dateien (`output.ordner`), Kopien verknüpfter Vorlagen |
-| `/vorlagen` | `/mnt/user/appdata/labeltool/vorlagen` | P-touch-Vorlagen `.lbx` (`labels.vorlagen_ordner`) |
-
-- Port **8765** (Weboberfläche und WebSocket für den Druck-Helfer).
-- `PARTDB_URL`, `PARTDB_TOKEN`: optionale Startwerte. Was im Reiter *Einstellungen* gespeichert wird, hat Vorrang.
-- `TZ`: Zeitzone, Standard `Europe/Berlin`.
-- Intern gesetzt (normalerweise nicht ändern): `LABELTOOL_CONFIG=/config/config.yaml`, `LABELTOOL_HOST=0.0.0.0`,
-  `LABELTOOL_PORT=8765`, `LABELTOOL_NO_BROWSER=1`.
-- Healthcheck: ruft alle 30 s `/api/meta` auf (Status in der Docker-Übersicht).
-
-### Erste Einrichtung
-
-1. Container starten. Fehlt `/config/config.yaml`, wird sie aus `docker/config.yaml` angelegt
-   (Ausgabe `/ausgabe`, Vorlagen `/vorlagen`, `druck.modus: helfer`, Kategorien und Lagerarten wie in
-   `config.example.yaml`).
-2. Vorlagen: Mit Druck-Helfer und Vorlagen-Ordner (empfohlen) kommen die `.lbx`-Dateien vom PC und werden
-   automatisch nach `/vorlagen` abgeglichen. Ohne Helfer-Ordner die `.lbx`-Vorlagen (z. B. aus `BeispielEtiketten`)
-   nach `\\UnraidHome\appdata\labeltool\vorlagen` kopieren.
-3. `http://<unraid-ip>:8765` öffnen → Reiter **Einstellungen**: Part-DB-URL und Token eintragen, „Verbindung testen“,
-   „Speichern“.
-4. Unter *Druck-Helfer* „Helfer herunterladen (Windows)“ – am PC entpacken und `helfer.bat` starten
-   (siehe nächster Abschnitt).
-5. Weitere Optionen (Encoding, Fach-Regex, Box-Vorlage …) stehen wie gewohnt in `/config/config.yaml`; nach Änderungen
-   den Container neu starten.
-
-## Druck-Helfer unter Windows
-
-Der Helfer läuft auf dem PC mit dem Etikettendrucker (z. B. PT-P710BT), baut von dort eine Verbindung zum Server auf
-und übernimmt alles Windows-Spezifische: Direktdruck und exakte Vorschau über b-PAC, Öffnen von Vorlagen im
-P-touch Editor, Ordner öffnen – und er hält den **Vorlagen-Ordner auf dem PC** mit dem Server abgeglichen.
-Da die Verbindung **vom PC ausgeht**, ist keine Firewall-Freigabe auf dem PC nötig.
-
-### Voraussetzungen am PC
-
-- Python 3.11+ ([python.org](https://www.python.org/downloads/) oder Microsoft Store – beide bringen tkinter für den
-  Assistenten mit; bei python.org die Option „tcl/tk and IDLE“ nicht abwählen)
-- P-touch Editor und der Brother-Druckertreiber für dein Modell
-- für Direktdruck/Vorschau die **b-PAC Client Component (64-bit)** (siehe [Direktdruck](#direktdruck-optional-b-pac))
-
-### Installation (Download + Assistent)
-
-1. Im Labeltool *Einstellungen → Druck-Helfer* → **„Helfer herunterladen (Windows)“**. Das ZIP
-   (`Labeltool-Helfer.zip`) enthält nur, was der Helfer braucht (einige Module aus `labeltool/`,
-   `requirements-helfer.txt`, `helfer.bat`, `helfer-autostart.bat`, `LIESMICH.txt`) und eine `helfer.vorgabe.yaml`
-   mit der **Server-Adresse** (so, wie der Browser den Server erreicht, auch hinter einem Reverse-Proxy über
-   `X-Forwarded-Proto/Host/Port/Prefix`) und dem **aktuellen Helfer-Token**. Gibt es noch keinen Token, wird er beim
-   Download erzeugt und gespeichert. Das ZIP also nicht weitergeben.
-2. ZIP in einen festen Ordner entpacken, z. B. `C:\Labeltool-Helfer`, und **`helfer.bat` doppelklicken**. Beim ersten
-   Start wird eine Python-Umgebung (`.venv`) angelegt (1–2 Minuten), dann öffnet sich der **Einrichtungs-Assistent**:
-   - **Server-Adresse** und **Token** sind vorbelegt („Verbindung testen“ prüft `GET /api/meta`)
-   - **Vorlagen-Ordner**: Ordner mit deinen `.lbx`-Vorlagen auf diesem PC (Vorschlag `Dokumente\Labeltool-Vorlagen`,
-     wird bei Bedarf angelegt; die Anzahl gefundener Vorlagen wird angezeigt). Dieser Ordner ist die **Quelle** der
-     Vorlagen: neue und geänderte Dateien übernimmt der Server, auf dem PC gelöschte verschiebt er nach `.geloescht/`.
-   - **Druckermodell**: Liste aller Modelle, die der installierte P-touch Editor kennt (126 bei Version 6.13; ohne
-     P-touch Editor eine eingebaute Liste). Installierte Drucker stehen oben mit „(installiert)“ und sind vorausgewählt;
-     der passende Windows-Druckername (z. B. „Brother PT-P710BT“) wird automatisch eingetragen. Ist das Modell nicht
-     installiert, gibt es einen Hinweis mit Link zum Brother-Treiber.
-   - **Autostart**: Verknüpfung „Labeltool Druck-Helfer“ im Autostart-Ordner, startet `helfer.bat` minimiert.
-3. **„Speichern & starten“** schreibt `helfer.yaml`; danach läuft der Helfer im Konsolenfenster. Die Kopfzeile im
-   Labeltool zeigt „Helfer“ und „Drucker“ grün, unter *Einstellungen → Druck-Helfer* stehen Rechner, Druckermodell,
-   Vorlagen-Ordner, Anzahl Vorlagen und der letzte Abgleich; der Reiter *Vorlagen* zeigt die Quelle.
-
-Gibt es kein tkinter (oder keine Anzeige), fragt der Assistent dieselben Werte in der Konsole ab
-(erzwingen: `.venv\Scripts\python -m labeltool.helfer_setup --konsole helfer.yaml`).
-
-### Später ändern
-
-- **`helfer.bat einrichten`** öffnet den Assistenten erneut (den laufenden Helfer vorher schließen).
-- **Neuer Helfer-Token** im Labeltool erzeugt? Den Helfer erneut herunterladen, in denselben Ordner entpacken und
-  `helfer.bat einrichten` – der Assistent übernimmt Server/Token aus der neueren `helfer.vorgabe.yaml`, Ordner und
-  Modell bleiben. Alternativ den Token von Hand in `helfer.yaml` eintragen (wirkt beim nächsten Verbindungsversuch).
-- Autostart entfernen: Häkchen im Assistenten abwählen oder `helfer-autostart.bat entfernen`.
-- Diagnose der Modellliste/Drucker: `.venv\Scripts\python -m labeltool.ptouch_modelle`.
-
-### helfer.yaml
+**docker compose** (`compose.yml`):
 
 ```yaml
-server: "http://192.168.0.100:8765"
+services:
+  labeltool:
+    image: ghcr.io/knartzpirat/partdb-storage-helper:latest
+    container_name: labeltool
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    environment:
+      TZ: Europe/Berlin
+      # optional: Startwerte, später in der Oberfläche änderbar
+      # PARTDB_URL: "http://partdb.lan:8080"
+      # PARTDB_TOKEN: "tcp_…"
+    volumes:
+      - config:/config
+      - ausgabe:/ausgabe
+      - vorlagen:/vorlagen
+
+volumes:
+  config:
+  ausgabe:
+  vorlagen:
+```
+
+```bash
+docker compose up -d
+```
+
+Danach `http://<server>:8765` öffnen und mit den [ersten Schritten](#erste-schritte) weitermachen.
+
+**Eigene Ordner statt benannter Volumes:** Der Container läuft nicht als root, sondern standardmäßig als `99:100`.
+Bei Bind-Mounts (`./config:/config` …) entweder die Ordner diesem Benutzer geben (`chown -R 99:100 ./config …`) oder
+den Container mit dem eigenen Benutzer starten: `--user "$(id -u):$(id -g)"` bzw. in Compose `user: "1000:1000"`.
+
+| Pfad im Container | Inhalt |
+|---|---|
+| `/config` | `config.yaml`, `einstellungen.yaml` (enthält die Tokens), `stammdaten.yaml`, Verlauf und Status |
+| `/ausgabe` | erzeugte CSV-Dateien für den P-touch Editor |
+| `/vorlagen` | P-touch-Vorlagen (`.lbx`) – mit Druck-Helfer automatisch vom PC abgeglichen |
+
+| Umgebungsvariable | Bedeutung |
+|---|---|
+| `TZ` | Zeitzone (Standard `Europe/Berlin`) |
+| `PARTDB_URL`, `PARTDB_TOKEN` | optionale Startwerte; was in der Oberfläche gespeichert wird, hat Vorrang |
+| `LABELTOOL_PORT` | Port im Container (Standard `8765`) |
+
+Port **8765** dient der Weboberfläche und der WebSocket-Verbindung des Druck-Helfers. Der Container hat einen
+Healthcheck (`/api/meta`). Beim ersten Start legt er `/config/config.yaml` mit Standardwerten an.
+
+### Unraid
+
+**Mit Template:**
+
+1. [`docker/labeltool.xml`](docker/labeltool.xml) nach
+   `/boot/config/plugins/dockerMan/templates-user/my-labeltool.xml` kopieren.
+2. *Docker → Add Container* → Template **labeltool** wählen, Pfade prüfen, *Apply*.
+
+Vorgeschlagene Pfade: `/mnt/user/appdata/labeltool/{config,ausgabe,vorlagen}`. Unraid-Rechte (`nobody:users` =
+`99:100`) passen ohne weitere Einstellungen.
+
+**Mit dem Plugin „Docker Compose Manager“:** neuen Stack anlegen, Inhalt von
+[`docker-compose.yml`](docker-compose.yml) einfügen, *Compose Up*.
+
+**Update:** im Docker-Tab *Check for Updates* → *Update* (Compose: `docker compose pull && docker compose up -d`).
+
+### Druck-Helfer unter Windows
+
+1. Labeltool im Browser **unter der Adresse öffnen, die der PC später verwenden soll** (z. B.
+   `http://unraid:8765`, nicht `localhost`) → *Einstellungen → Druck-Helfer* → **„Helfer herunterladen (Windows)“**.
+   Das ZIP enthält den Helfer, die Server-Adresse und den Helfer-Token – nicht weitergeben.
+2. ZIP in einen festen Ordner entpacken (z. B. `C:\Labeltool-Helfer`) und **`helfer.bat`** doppelklicken.
+   Beim ersten Start wird eine Python-Umgebung eingerichtet (1–2 Minuten), danach öffnet sich der
+   **Einrichtungs-Assistent**:
+   - **Server und Token** sind vorbelegt; „Verbindung testen“ prüft beides.
+   - **Vorlagen-Ordner:** Ordner mit deinen `.lbx`-Vorlagen auf diesem PC. Er ist die Quelle der Vorlagen (siehe
+     [Vorlagen-Abgleich](#vorlagen-abgleich)). Ist er leer, holt der Helfer die Vorlagen vom Server.
+   - **Druckermodell:** alle Modelle, die der installierte P-touch Editor kennt; installierte Drucker stehen oben und
+     sind vorausgewählt. Fehlt der Treiber, gibt es einen Link zu Brother.
+   - **Autostart:** startet den Helfer bei der Anmeldung minimiert.
+3. **„Speichern & starten“.** In der Kopfzeile des Labeltools werden „Helfer“ und „Drucker“ grün.
+
+Später ändern: `helfer.bat einrichten` (laufenden Helfer vorher schließen). Nach einem neuen Helfer-Token den Helfer
+erneut herunterladen, in denselben Ordner entpacken und `helfer.bat einrichten` ausführen – Ordner und Modell bleiben
+erhalten. Autostart entfernen: Häkchen im Assistenten abwählen oder `helfer-autostart.bat entfernen`.
+
+Die Einstellungen stehen in `helfer.yaml`:
+
+```yaml
+server: "http://unraid:8765"
 token: "…"
-vorlagen_ordner: "C:\\Users\\Name\\Documents\\Labeltool-Vorlagen"   # Quelle der .lbx-Vorlagen
+vorlagen_ordner: "C:\\Users\\Name\\Documents\\Labeltool-Vorlagen"
 drucker_modell: "PT-P710BT"
-drucker: "Brother PT-P710BT"    # leer = passend zum Modell automatisch suchen
-autostart: true                 # nur Info für den Assistenten
+drucker: "Brother PT-P710BT"    # leer = passend zum Modell suchen
+autostart: true
 ```
 
-Ohne `vorlagen_ordner` arbeitet der Helfer wie früher mit den Vorlagen auf dem Server. Der alte Abschnitt `pfade`
-(Server-Pfad → Windows-Pfad) wird nicht mehr gebraucht, stört aber nicht; der Assistent übernimmt ihn unverändert.
-Beispiel mit Kommentaren: `helfer.example.yaml`.
+Der Helfer baut die Verbindung nach Unterbrechungen selbst wieder auf. Es ist immer nur ein Helfer verbunden; ein neu
+verbundener ersetzt den alten.
 
-Der Helfer baut die Verbindung nach Abbrüchen (Server-Neustart, WLAN) selbst wieder auf. Es kann immer nur ein Helfer
-verbunden sein, ein neu verbundener verdrängt den alten.
+### Lokal unter Windows (ohne Docker)
 
-### Helfer aus dem Projektordner
+1. Projekt herunterladen (Code → *Download ZIP*) und entpacken.
+2. **`start.bat`** doppelklicken. Beim ersten Start wird `config.yaml` aus `config.example.yaml` angelegt und im Editor
+   geöffnet – Part-DB-Adresse und Token kannst du dort oder später in der Oberfläche eintragen.
+3. `start.bat` erneut starten; die Python-Umgebung wird eingerichtet und der Browser öffnet `http://127.0.0.1:8765`.
 
-Im kompletten Projektordner funktioniert `helfer.bat` genauso (nutzt dann `requirements.txt` und dieselbe `.venv` wie
-`start.bat`).
+In dieser Betriebsart (`druck.modus: lokal`) laufen Direktdruck, Vorschau und P-touch Editor ohne Helfer. Den
+Vorlagenordner legt `labels.vorlagen_ordner` in `config.yaml` fest.
 
-### Server lokal ohne Docker mit Helfer
+## Erste Schritte
 
-`start.bat` startet wie bisher alles lokal (`druck.modus: lokal`). Für Tests lässt sich der Server auch mit
-Umgebungsvariablen starten: `LABELTOOL_CONFIG` (Pfad zur `config.yaml`, ein Argument hat Vorrang),
-`LABELTOOL_HOST`, `LABELTOOL_PORT`, `LABELTOOL_NO_BROWSER=1` (kein Browser). Der Browser öffnet sich ohnehin nur,
-wenn der Server an `127.0.0.1`/`localhost` lauscht.
+1. **Einstellungen → Part-DB:** Adresse (ohne `/api`) und API-Token eintragen, „Verbindung testen“, „Speichern“.
+   Die Kopfzeile zeigt danach *Part-DB: online* mit Version und Benutzer.
+2. **Druck-Helfer einrichten** (Docker-Betrieb), siehe oben.
+3. **Stammdaten prüfen:** Inhalte, Lagerarten und Boxfarben an die eigene Lagerhaltung anpassen
+   (siehe [Stammdaten](#stammdaten)).
+4. **Vorlagen zuordnen:** Im Reiter *Stammdaten* jeder Lagerart ihre Bauteil-Vorlage zuweisen; die Box-Label-Vorlage
+   steht in `config.yaml` unter `labels.box_vorlage`. Beispiele liegen in [`BeispielEtiketten/`](BeispielEtiketten).
 
-## Tests
+## Arbeitsablauf
+
+| Label | Band | Vorlage | CSV |
+|---|---|---|---|
+| Box-Label | 24 mm | `labels.box_vorlage`, z. B. `Layout_Lagerbox_PartDB.lbx` | `Namenslabels.csv` |
+| Bauteil-Label | 12 mm | je Lagerart, z. B. `PartDB_Window-Div-Bin-2.lbx` | `Inhalt_<Lagerart>.csv` |
+
+**Neue Boxen:** Reiter *Neue Box* → Inhalt und Lagerart wählen (die Abteile kommen aus der Lagerart), Anzahl
+angeben, *In Part-DB anlegen*. Alle neuen Boxen ohne Label stehen darunter; *Box-Labels drucken* (bzw. *Direkt
+drucken*) erzeugt die Etiketten. Nach dem Aufkleben *Gedruckt ✓* klicken. Unter *Alle Boxen* lässt sich jedes Label
+nachdrucken.
+
+**Bauteil-Labels:** In Part-DB Bauteile anlegen, Lagerort setzen und den Tag `noLabel` vergeben. Der Reiter
+*Bauteil-Labels* sammelt alle Boxen mit mindestens einem getaggten Teil und zeigt das Label mit allen Teilen der Box.
+Drucken (direkt oder über *CSVs schreiben* → *In P-touch öffnen*), dann *Gedruckt – Tags entfernen*. Entfernt wird der
+Tag nur bei den Teilen, die tatsächlich gedruckt wurden.
+
+**Fächer:** Damit ein Teil in einem bestimmten Feld landet, in der **Beschreibung des Bestands (Part-Lot)** `Fach 3`
+oder `F3` eintragen. Teile ohne Fach füllen die freien Felder alphabetisch auf. Die Oberfläche warnt bei zu vielen
+Teilen oder doppelt belegten Fächern.
+
+**Inhalt eines Bauteil-Labels:** `Location` = Boxname, `Category` = häufigste Part-DB-Kategorie der Bauteile
+(oder der Inhalt der Box, `kategorie_quelle: box`), `Section1…n` = Bauteilname, `Footprint1…n` = Footprint.
+
+## Stammdaten
+
+Reiter **Stammdaten**:
+
+- **Boxfarben:** feste Palette (Name → Anzeigefarbe), damit z. B. „Hellblau“ überall gleich aussieht. Umbenennen
+  ändert die Farbe bei allen Inhalten; eine genutzte Farbe lässt sich nicht löschen. Farben bestehender Boxen werden
+  unabhängig von Schreibweise zugeordnet („Hell Blau“ = „Hellblau“).
+- **Inhalte:** Kürzel (Teil des Boxnamens), Name und Boxfarbe.
+- **Lagerarten:** Anzahl Abteile (wird bei *Neue Box* vorbelegt und bestimmt die Felder auf dem Bauteil-Label),
+  P-touch-Vorlage und optional der CSV-Dateiname.
+
+Löschen fragt zweimal nach und warnt, wenn Boxen in Part-DB den Eintrag noch nutzen. *Rückgängig* nimmt die letzten
+Änderungen zurück (bis zu 50 Schritte, auch nach einem Neustart). Gespeichert wird in `stammdaten.yaml`; die Einträge in
+`config.yaml` sind nur Startwerte. Umbenennen ändert keine bestehenden Boxen in Part-DB.
+
+## Vorlagen
+
+### Eigene Vorlagen gestalten
+
+Vorlagen sind P-touch-Editor-Dateien (`.lbx`), deren Textfelder und Barcodes per *Datenbank → Verbinden* mit
+CSV-Spalten verknüpft sind. Das Tool befüllt diese Spalten:
+
+| Vorlage | Spalten |
+|---|---|
+| Box-Label | `ID`, `Lagername`, `Barcodeinhalt`, `Lagerinhalt`, `Lagerabteile`, `Lagerfarbe`, `Lagerart`, `Lager-ID` |
+| Bauteil-Label | `Location`, `Category`, `Section1…n`, `Footprint1…n`, `Barcode`, `Lagerfarbe`, `Lagerinhalt` |
+
+Bauteil-CSVs haben immer mindestens sechs `Section`/`Footprint`-Spalten. Am einfachsten ist es, eine der Vorlagen aus
+[`BeispielEtiketten/`](BeispielEtiketten) zu kopieren und anzupassen.
+
+### Reiter „Vorlagen“
+
+- **Übersicht** aller Vorlagen mit Band, Länge, genutzten Feldern, zugehöriger Lagerart und Warnungen (z. B. weniger
+  Felder als Abteile, unbekannte Spalten).
+- **Vorschau** mit Beispieldaten („Worst Case“ mit langen Werten, Text aus der Vorlage oder eine echte Box). Die Werte
+  sind bearbeitbar, die Vorschau aktualisiert sich live – mit b-PAC exakt wie gedruckt, sonst als Skizze.
+- **Im P-touch Editor bearbeiten:** öffnet die Vorlage mit Beispieldaten; beim ersten Mal wird ein Backup angelegt.
+- **Kopie als neue Vorlage:** z. B. aus einer Vorlage für 5 Abteile eine für 6 machen und gleich einer Lagerart
+  zuweisen.
+
+### Vorlagen-Abgleich
+
+Mit Druck-Helfer und Vorlagen-Ordner ist der **Ordner auf dem PC die Quelle**: Neue und geänderte Vorlagen übernimmt
+der Server automatisch (etwa alle 10 Sekunden), im Labeltool angelegte Kopien landen im PC-Ordner. Auf dem PC
+gelöschte Vorlagen verschiebt der Server nach `/vorlagen/.geloescht/`. Fehlen auf einmal viele Vorlagen (z. B.
+falscher Ordner gewählt), wird nichts verschoben, bis du es im Reiter *Vorlagen* bestätigst.
+
+## Direktdruck und exakte Vorschau
+
+Beides läuft über die **Brother b-PAC Client Component**:
+
+1. Download: <https://support.brother.com/g/s/es/dev/en/bpac/download/index.html> → Abschnitt
+   **„b-PAC Client Component Only“** → neueste Version, **64-bit** (`.msi`). Das SDK wird nicht benötigt.
+   Unterstützte Modelle: [Modellliste](https://support.brother.com/g/s/es/dev/en/bpac/environment/index.html).
+2. Drucker per USB anschließen; er muss in Windows unter *Drucker & Scanner* erscheinen.
+3. In der Oberfläche unter *Einstellungen → Druck* Direktdruck einschalten und Schnittoptionen wählen
+   (z. B. `autocut`, `cutatend`).
+
+Gedruckt wird mit den Originalvorlagen, sie werden dabei nicht verändert. Ist der Drucker nicht verbunden, wird kein
+Auftrag gesendet – so bleiben keine Aufträge in der Warteschlange hängen, die später unerwartet drucken.
+
+## Konfiguration
+
+Die meisten Einstellungen sind in der Oberfläche erreichbar und landen in `einstellungen.yaml`. Weitere Optionen in
+`config.yaml` (Vorlage mit Kommentaren: [`config.example.yaml`](config.example.yaml), im Docker
+[`docker/config.yaml`](docker/config.yaml)):
+
+| Schlüssel | Bedeutung |
+|---|---|
+| `partdb.url`, `partdb.token`, `partdb.ssl_pruefen` | Part-DB-Verbindung (in der Oberfläche änderbar) |
+| `output.ordner`, `output.encoding`, `output.trennzeichen` | CSV-Ausgabe; erscheinen Umlaute im P-touch Editor falsch, `encoding: cp1252` |
+| `labels.tag` | Part-DB-Tag für „braucht Bauteil-Label“ (Standard `noLabel`) |
+| `labels.vorlagen_ordner`, `labels.box_vorlage` | Ordner der `.lbx`-Vorlagen und Vorlage des Box-Labels |
+| `labels.kategorie_quelle` | `part` = häufigste Bauteil-Kategorie, `box` = Inhalt der Box |
+| `labels.fach_regex` | Muster für die Fachnummer in der Bestandsbeschreibung |
+| `labels.standard_felder` | Felder für Boxen ohne bekannte Lagerart |
+| `druck.modus` | `lokal` (alles auf einem Windows-PC) oder `helfer` (Docker + Druck-Helfer) |
+| `druck.direktdruck`, `druck.drucker`, `druck.schnitt` | Direktdruck, Windows-Druckername (leer = aus der Vorlage), Schnittoptionen |
+
+Nach Änderungen an `config.yaml` den Server bzw. Container neu starten.
+
+## Daten in Part-DB
+
+Boxen sind Part-DB-**Lagerorte**. Der Name hat das Format `<Kürzel>-<Abteile>.<Nummer>`, z. B. `MIC-2.0021`; die
+Nummer läuft je Kürzel fort und wird aus den vorhandenen Lagerorten ermittelt. Im Kommentar stehen die übrigen Angaben:
 
 ```
+Lagerinhalt: Microcontroller Lagerfarbe: Dunkelgrau Lagerabteile: 2 Lagerart: WinBin2
+```
+
+Der Barcode auf dem Box-Label ist der Part-DB-Lagerort-Barcode (`S` + vierstellige ID), den der Part-DB-Scanner
+direkt erkennt. Lagerorte, bei denen die Lagerart als Parameter hinterlegt ist, werden ebenfalls erkannt.
+
+## Sicherheit
+
+- Die Weboberfläche hat **keine Anmeldung**. Jeder, der den Port erreicht, kann Boxen in Part-DB anlegen und
+  Einstellungen ändern. Nur im LAN betreiben, den Port nicht ins Internet freigeben; ein Reverse-Proxy nur mit eigener
+  Authentifizierung.
+- Part-DB- und Helfer-Token liegen im Klartext in `/config/einstellungen.yaml`.
+- Die Verbindung des Druck-Helfers ist ohne Reverse-Proxy mit TLS unverschlüsselt (`ws://`).
+
+## Entwicklung
+
+```bash
 pip install -r requirements.txt pytest
 python -m pytest tests
 ```
 
-Die Tests laufen gegen ein simuliertes Part-DB und prüfen Anlegen, Namensvergabe, CSV-Spalten, Fachzuordnung und das Entfernen der Tags.
+Die Tests laufen gegen ein simuliertes Part-DB und feste Testvorlagen (`tests/vorlagen/`); Windows-spezifische Tests
+überspringen sich unter Linux. Der Workflow [`.github/workflows/docker.yml`](.github/workflows/docker.yml) führt die
+Tests bei jedem Push aus und veröffentlicht danach das Image (`main` → `:latest`, Tag `v1.2.3` → `:1.2.3` und `:1.2`).
+
+Image selbst bauen:
+
+```bash
+docker build -t labeltool:latest .
+# andere Benutzer-IDs: --build-arg PUID=1000 --build-arg PGID=1000
+```
+
+Server ohne Docker mit Umgebungsvariablen starten: `LABELTOOL_CONFIG` (Pfad zur `config.yaml`), `LABELTOOL_HOST`,
+`LABELTOOL_PORT`, `LABELTOOL_NO_BROWSER=1`.

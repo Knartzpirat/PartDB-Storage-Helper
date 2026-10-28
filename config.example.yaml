@@ -9,13 +9,13 @@ partdb:
 output:
   # Hierhin schreibt das Tool die CSVs. Die P-touch-Vorlagen einmal mit diesen
   # Dateien verknüpfen – das Tool überschreibt sie immer am selben Pfad.
-  ordner: "C:/Users/Lasse/Documents/P-touch/Labeldaten"
+  ordner: "Labeldaten"                    # relativ zu dieser Datei oder absolut, z. B. "C:/Users/Name/Documents/Labeldaten"
   encoding: "utf-8-sig"   # Falls Umlaute im P-touch Editor falsch sind: "cp1252" probieren
   trennzeichen: ","
 
 labels:
   tag: "noLabel"                          # Part-DB-Tag für "braucht Inhaltslabel"
-  namenslabel_datei: "Namenslabels.csv"   # 24-mm-Box-Label (Spalten wie altes Sheet 'exportLabel')
+  namenslabel_datei: "Namenslabels.csv"   # CSV für die 24-mm-Box-Label-Vorlage
   standard_felder: 6                      # Felder für Boxen ohne bekannte Lagerart
   kategorie_quelle: "part"                # "part" = häufigste Bauteil-Kategorie, "box" = Lagerinhalt
   # Fachnummer aus der Beschreibung des Part-Lots, z. B. "Fach 3" oder "F3"
@@ -46,7 +46,7 @@ farben:
   Lila:        "#7d4cdb"
   Braun:       "#8b5a2b"
 
-# Ersetzt das Sheet 'Lagerinhalt'. Schlüssel = Kürzel im Boxnamen, farbe = Name aus farben.
+# Inhalte der Boxen. Schlüssel = Kürzel im Boxnamen, farbe = Name aus farben.
 kategorien:
   M1.6:   { name: "M1.6",            farbe: "Hell Blau" }
   M2:     { name: "M2",              farbe: "Blau" }
@@ -70,7 +70,7 @@ kategorien:
   Fila:   { name: "Filament",        farbe: "Weiß" }
   Holz:   { name: "Holzschrauben",   farbe: "Braun" }
 
-# Ersetzt das Sheet 'Lagerart'. abteile = Vorbelegung bei "Neue Box" und Anzahl Bauteile
+# Lagerarten (Boxtypen). abteile = Vorbelegung bei "Neue Box" und Anzahl Bauteile
 # auf dem 12-mm-Label, lbx = P-touch-Vorlage, datei = CSV (weglassen = Inhalt_<Name>.csv).
 lagerarten:
   WinBin1: { abteile: 1, datei: "Inhalt_WinBin1.csv", lbx: "PartDB_Window-Div-Bin-1.lbx" }

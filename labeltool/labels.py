@@ -15,7 +15,7 @@ from .config import Config
 from .model import Box
 from .partdb import PartDB, ref_id
 
-# Spalten wie im bisherigen Sheet 'exportLabel' – die Box-Label-Vorlage (24 mm) bleibt gültig.
+# Spalten der CSV für die Box-Label-Vorlage (24 mm) – Vorlagen sind mit diesen Namen verknüpft.
 NAME_COLUMNS = ["ID", "Lagername", "Barcodeinhalt", "Lagerinhalt", "Lagerabteile",
                 "Lagerfarbe", "Lagerart", "Lager-ID"]
 
@@ -38,7 +38,7 @@ MIN_CONTENT_COLUMNS = 6
 
 
 def content_columns(slots: int) -> list[str]:
-    # Gleiche Reihenfolge wie im Sheet 'SMD15': Location, Category, Section1..n, Footprint1..n
+    # Reihenfolge: Location, Category, Section1..n, Footprint1..n
     n = max(slots, MIN_CONTENT_COLUMNS)
     cols = ["Location", "Category"]
     cols += [f"Section{i}" for i in range(1, n + 1)]

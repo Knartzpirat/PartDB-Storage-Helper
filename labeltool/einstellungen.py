@@ -105,7 +105,7 @@ def normalize_url(url: str | None) -> str:
     parts = urlsplit(url)
     if parts.scheme.lower() not in ("http", "https") or not parts.hostname:
         raise SettingsError("Die Part-DB-URL muss mit http:// oder https:// beginnen, "
-                            "z. B. http://192.168.0.100:4444 (ohne /api).")
+                            "z. B. http://partdb.lan:8080 (ohne /api).")
     try:
         parts.port   # wirft bei ungültigem Port
     except ValueError:
