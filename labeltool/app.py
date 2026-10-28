@@ -80,6 +80,10 @@ class TokenCheck(BaseModel):
     token: str = ""
 
 
+class HelperUpdate(BaseModel):
+    erzwingen: bool = False         # auch bei gleicher/neuerer Version neu installieren
+
+
 class TemplateCopy(BaseModel):
     quelle: str                     # vorhandene .lbx
     name: str                       # neuer Dateiname (.lbx)
@@ -124,6 +128,14 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
             return {"ok": False, "grund": "Auf dem Server ist noch kein Helfer-Token eingerichtet."}
         ok = hub.token_ok(req.token.strip())
         return {"ok": ok, "grund": "" if ok else "Helfer-Token ungültig."}
+
+    @app.post("/api/helfer/aktualisieren")
+    def helper_update(req: HelperUpdate | None = None):
+        """Update per Knopf: verbundener (installierter) Helfer lädt das Setup vom Server und startet es."""
+        try:
+            return hub.start_update(bool(req and req.erzwingen))
+        except helfer_server.UpdateError as e:
+            raise HTTPException(e.status, str(e))
 
     @app.post("/api/helfer/vorlagen/loeschen-bestaetigen")
     def helper_confirm_delete():

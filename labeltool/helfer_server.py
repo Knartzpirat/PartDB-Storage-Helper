@@ -43,6 +43,7 @@ from pathlib import Path
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from . import __version__, bpac
+from . import routes_helfer_download as downloads
 from .desktop import (MAX_FILE, LocalDesktop, default_printer, lbx_ok, printer_state, require_online,
                       sha256, valid_name, write_atomic)
 from .ptouch import TemplateError
@@ -61,6 +62,8 @@ TIMEOUT_PREVIEW = 15.0
 TIMEOUT_PRINT = 60.0
 TIMEOUT_DESKTOP = 20.0
 TIMEOUT_FILE = 30.0          # s – eine Vorlage im Abgleich holen/schicken
+TIMEOUT_UPDATE = 300.0       # s – Helfer lädt das Setup (~13 MB) und startet es (inkl. Windows-Admin-Abfrage)
+SETUP_PFAD = "/api/helfer/installer/setup"
 STATE_TTL = 5.0              # s – Cache für den lokalen Drucker-/b-PAC-Status
 PROTECT_TIME = 120.0         # s – frisch zum PC geschickte Vorlagen nicht als „gelöscht“ werten
 DELETED_DIR = ".geloescht"   # im Vorlagenordner des Servers
@@ -69,9 +72,13 @@ NOT_CONNECTED = ("Der Druck-Helfer ist nicht verbunden – auf dem Windows-PC mi
                  "„helfer.bat“ starten (Token unter Einstellungen > Helfer).")
 NO_FOLDER = ("Auf dem Helfer-PC ist kein Vorlagen-Ordner eingerichtet – es werden die Vorlagen auf dem "
              "Server genutzt („helfer.bat einrichten“ auf dem PC).")
+UPD_NO_SETUP = "Auf dem Server liegt kein Helfer-Setup vor – Update per Knopf nicht möglich."
+UPD_NOT_INSTALLED = ("Der Helfer läuft ohne Installation (Python-/ZIP-Paket) – Update per Knopf geht nur mit dem "
+                     "installierten Helfer. Bitte den Installer verwenden (Einstellungen > Druck-Helfer).")
 OLD_HELPER = "Der Druck-Helfer ist veraltet (kein Vorlagen-Abgleich) – neue Version unter Einstellungen > Helfer laden."
 INFO_KEYS = ("rechner", "version", "bpac", "bpac_grund", "drucker_liste", "drucker", "drucker_status",
-             "protokoll", "drucker_modell", "vorlagen_ordner")
+             "protokoll", "drucker_modell", "vorlagen_ordner", "installiert")
+_VERSION_NUM = re.compile(r"(\d+)\.(\d+)\.(\d+)")
 _SHA_RE = re.compile(r"[0-9a-f]{64}")
 
 
@@ -102,6 +109,58 @@ def _clean_info(msg: dict) -> dict:
     if "drucker_status" in info and not isinstance(info["drucker_status"], dict):
         info["drucker_status"] = {}
     return info
+
+
+# ------------------------------------------------------------------ Versionen / Update
+def compare_versions(a: str | None, b: str | None) -> int | None:
+    """-1/0/1 für a<b, a==b, a>b. Nur `x.y.z` wird numerisch verglichen; sonst 0 bei gleich, None bei anders
+    (oder wenn eine Seite unbekannt ist)."""
+    if not a or not b:
+        return None
+    ma, mb = _VERSION_NUM.fullmatch(a.strip()), _VERSION_NUM.fullmatch(b.strip())
+    if ma and mb:
+        x, y = tuple(map(int, ma.groups())), tuple(map(int, mb.groups()))
+        return (x > y) - (x < y)
+    return 0 if a.strip() == b.strip() else None
+
+
+class UpdateError(Exception):
+    """Update per Knopf nicht möglich/fehlgeschlagen; `status` = HTTP-Status (400/409)."""
+
+    def __init__(self, text: str, status: int = 400):
+        super().__init__(text)
+        self.status = status
+
+
+def update_status(info: dict | None, modus: str = "helfer") -> dict:
+    """"update"-Teil von helper_status()["helfer"]. info = hallo/status des Helfers (None = nicht verbunden)."""
+    setup = downloads.installer_pfad()
+    angeboten = downloads.setup_version(setup) if setup else None
+    installiert = str(info.get("version")) if info and info.get("version") else None
+    out = {"verfuegbar": False, "installiert": installiert, "angeboten": angeboten, "grund": "", "moeglich": False}
+    if modus != "helfer":
+        return dict(out, grund="Lokaler Modus – es ist kein Druck-Helfer im Einsatz.")
+    if info is None:
+        return dict(out, grund="Der Druck-Helfer ist nicht verbunden.")
+    if setup is None:
+        return dict(out, grund=UPD_NO_SETUP)
+    cmp = compare_versions(installiert, angeboten)
+    if angeboten is None:
+        out["grund"] = ("Version des Setups auf dem Server unbekannt (Labeltool-Helfer-Setup.version fehlt) – "
+                        "Aktualisieren ist trotzdem möglich.")
+    elif installiert is None:
+        out.update(verfuegbar=True, grund=f"Helfer-Version unbekannt – auf dem Server: {angeboten}.")
+    elif cmp == 0:
+        out["grund"] = f"Der Helfer ist aktuell ({installiert})."
+    elif cmp is not None and cmp > 0:
+        out["grund"] = f"Der Helfer ({installiert}) ist neuer als das Setup auf dem Server ({angeboten})."
+    else:
+        out.update(verfuegbar=True, grund=f"Neue Version verfügbar: installiert {installiert} → verfügbar {angeboten}.")
+    if info.get("installiert") is not True:
+        out["grund"] = (out["grund"] + " " if out["verfuegbar"] else "") + UPD_NOT_INSTALLED
+        return out
+    out["moeglich"] = True
+    return out
 
 
 # ------------------------------------------------------------------ Verbindung
@@ -555,6 +614,40 @@ class HelperHub:
             raise HelperError(str(answer.get("fehler") or "Vorlage konnte nicht zum PC geschickt werden."))
         return answer.get("daten") or {}
 
+    def start_update(self, erzwingen: bool = False) -> dict:
+        """Update per Knopf: dem verbundenen (installierten) Helfer den Auftrag „aktualisieren“ schicken.
+
+        Der Helfer lädt das Setup selbst über SETUP_PFAD (mit seinem Token), prüft die sha256, startet es mit
+        Rechteanhebung und beendet sich. Aus einem Worker-Thread aufrufen (blockiert bis zur Antwort).
+        """
+        conn = self.connection()
+        if conn is None:
+            raise UpdateError(NOT_CONNECTED, 409)
+        upd = update_status(conn.info)
+        setup = downloads.installer_pfad()
+        if setup is None:
+            raise UpdateError(UPD_NO_SETUP, 400)
+        if conn.info.get("installiert") is not True:
+            raise UpdateError(UPD_NOT_INSTALLED, 400)
+        cmp = compare_versions(upd["installiert"], upd["angeboten"])
+        if not erzwingen and cmp is not None and cmp >= 0:
+            raise UpdateError(upd["grund"] + " Mit „erzwingen“ trotzdem neu installieren.", 409)
+        try:
+            sha = downloads.setup_sha256(setup)
+        except OSError as e:
+            raise UpdateError(f"Setup-Datei auf dem Server nicht lesbar: {e}", 400)
+        msg = {"typ": "aktualisieren", "pfad": SETUP_PFAD, "version": upd["angeboten"], "sha256": sha}
+        try:
+            answer = self.request(msg, TIMEOUT_UPDATE, conn)
+        except HelperError as e:
+            raise UpdateError(f"Update fehlgeschlagen: {e}", 400) from e
+        if not answer.get("ok"):
+            raise UpdateError("Update fehlgeschlagen: " + str(answer.get("fehler") or "unbekannter Fehler im Helfer."),
+                              400)
+        log.info("Helfer-Update gestartet (%s -> %s) auf %s.", upd["installiert"], upd["angeboten"] or "?",
+                 conn.info.get("rechner"))
+        return {"gestartet": True, "version": upd["angeboten"], "von": upd["installiert"]}
+
     # ----------------------------------------------------------- Trennen
     async def _close_conn(self, conn: _Connection, code: int, reason: str) -> None:
         try:
@@ -691,7 +784,8 @@ class HelperHub:
         if conn is None:
             return {"helfer": {"modus": "helfer", "verbunden": False, "rechner": None, "seit": None, "version": None,
                                "bpac": False, "drucker_liste": [], "getrennt": self.getrennt,
-                               "vorlagen": self.sync.status(None), "drucker_modell": None},
+                               "vorlagen": self.sync.status(None), "drucker_modell": None,
+                               "update": update_status(None)},
                     "drucker": {"name": getattr(self.cfg, "printer", "") or None, "angeschlossen": None,
                                 "status_text": "Druck-Helfer nicht verbunden", "bereit": False}}
         info = conn.info
@@ -704,7 +798,8 @@ class HelperHub:
         return {"helfer": {"modus": "helfer", "verbunden": True, "rechner": info.get("rechner"), "seit": conn.seit,
                            "version": info.get("version"), "bpac": bool(info.get("bpac")),
                            "drucker_liste": list(info.get("drucker_liste") or []),
-                           "vorlagen": self.sync.status(conn), "drucker_modell": info.get("drucker_modell") or None},
+                           "vorlagen": self.sync.status(conn), "drucker_modell": info.get("drucker_modell") or None,
+                           "update": update_status(info)},
                 "drucker": {"name": name, "angeschlossen": state.get("angeschlossen"), "status_text": text,
                             "bereit": bool(getattr(self.cfg, "direct_print", False) and st["ok"]
                                            and state.get("angeschlossen") is True)}}
@@ -946,7 +1041,7 @@ class StatusProvider:
                            "version": __version__, "bpac": avail, "drucker_liste": names,
                            "vorlagen": {"ordner": str(self.cfg.template_dir), "anzahl": self.hub.sync.count(),
                                         "abgeglichen": None, "fehler": None, "hinweis": None},
-                           "drucker_modell": None},
+                           "drucker_modell": None, "update": update_status(None, "lokal")},
                 "drucker": {"name": name or None, "angeschlossen": state.get("angeschlossen"), "status_text": text,
                             "bereit": bool(getattr(self.cfg, "direct_print", False) and st.get("ok")
                                            and state.get("angeschlossen") is True)}}

@@ -3,12 +3,17 @@
   GET /api/helfer/installer        Labeltool-Helfer-Installer.zip: Setup-Programm + helfer.vorgabe.yaml + LIESMICH.txt
   GET /api/helfer/installer/info   {"installer_verfuegbar": bool, ...} – ob die Setup-Datei auf dem Server liegt
   GET /api/helfer/download         Labeltool-Helfer.zip: Python-Variante ohne Installation (siehe unten)
+  GET /api/helfer/installer/setup  nur die Setup-Datei – für das Update per Knopf; NUR mit Helfer-Token
+                                   (Authorization: Bearer …), Header X-Setup-Version / X-Setup-Sha256
 
 Einbinden in create_app:  routes_helfer_download.register(app, cfg, app.state.hooks)
 
 Die Setup-Datei baut die CI (PyInstaller + Inno Setup) und legt sie ins Image unter
 /app/helfer-installer/Labeltool-Helfer-Setup.exe; anderer Ort per Umgebungsvariable LABELTOOL_INSTALLER.
 Ohne Variable wird lokal zusätzlich installer/dist/Labeltool-Helfer-Setup.exe im Projekt gesucht.
+Neben der Setup-Datei liegt Labeltool-Helfer-Setup.version (nur die Build-Version, z. B. 1.2.3); fehlt sie,
+ist die angebotene Version unbekannt (Update per Knopf geht trotzdem). Die sha256 der Setup-Datei
+berechnet der Server selbst (gecacht nach Größe/Änderungszeit).
 
 Python-Variante:
 
@@ -26,8 +31,12 @@ from __future__ import annotations
 import ast
 import io
 import json
+import hashlib
 import os
+import re
+import secrets
 import tempfile
+import threading
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -303,6 +312,45 @@ def installer_pfad() -> Path | None:
     return None
 
 
+VERSION_NAME = "Labeltool-Helfer-Setup.version"
+_VERSION_RE = re.compile(r"[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}")
+_SHA_CACHE: dict[str, tuple[int, int, str]] = {}     # Pfad -> (Größe, mtime_ns, sha256)
+_SHA_LOCK = threading.Lock()
+
+
+def setup_version(setup: Path | None = None) -> str | None:
+    """Build-Version aus Labeltool-Helfer-Setup.version neben der Setup-Datei; None = unbekannt."""
+    setup = setup or installer_pfad()
+    if setup is None:
+        return None
+    try:
+        with open(Path(setup).with_name(VERSION_NAME), "rb") as f:
+            text = f.read(200).decode("utf-8-sig", "replace").strip()
+    except OSError:
+        return None
+    text = text.splitlines()[0].strip() if text else ""
+    return text if _VERSION_RE.fullmatch(text) else None
+
+
+def setup_sha256(setup: Path) -> str:
+    """sha256 der Setup-Datei (blockweise gelesen, gecacht solange Größe/mtime gleich bleiben)."""
+    setup = Path(setup)
+    st = setup.stat()
+    key = str(setup.resolve())
+    with _SHA_LOCK:
+        hit = _SHA_CACHE.get(key)
+        if hit and hit[:2] == (st.st_size, st.st_mtime_ns):
+            return hit[2]
+    h = hashlib.sha256()
+    with open(setup, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    sha = h.hexdigest()
+    with _SHA_LOCK:
+        _SHA_CACHE[key] = (st.st_size, st.st_mtime_ns, sha)
+    return sha
+
+
 def installer_info(cfg: Config | None = None) -> dict:
     """Für /api/meta bzw. /api/helfer/installer/info. Erzeugt keinen Token und liest die Datei nicht."""
     p = installer_pfad()
@@ -310,7 +358,18 @@ def installer_info(cfg: Config | None = None) -> dict:
         return {"installer_verfuegbar": False}
     st = p.stat()
     return {"installer_verfuegbar": True, "installer_groesse": st.st_size,
-            "installer_stand": datetime.fromtimestamp(st.st_mtime).isoformat(timespec="seconds")}
+            "installer_stand": datetime.fromtimestamp(st.st_mtime).isoformat(timespec="seconds"),
+            "installer_version": setup_version(p)}
+
+
+def token_aus_header(request: Request) -> str:
+    h = request.headers.get("authorization", "")
+    return h[7:].strip() if h.lower().startswith("bearer ") else ""
+
+
+def token_gleich(a: str, b: str) -> bool:
+    """Konstante-Zeit-Vergleich; ein leerer Server-Token passt nie."""
+    return bool(a) and bool(b) and secrets.compare_digest(a.encode("utf-8"), b.encode("utf-8"))
 
 
 def baue_installer_zip(ziel, setup: Path, server: str, token: str) -> None:
@@ -356,6 +415,23 @@ def register(app: FastAPI, cfg: Config, hooks: Any = None) -> None:
             raise
         return FileResponse(tmp, media_type="application/zip", filename=INSTALLER_ZIP_NAME,
                             headers={"Cache-Control": "no-store"}, background=BackgroundTask(_loeschen, tmp))
+
+    @app.get("/api/helfer/installer/setup")
+    def installer_setup(request: Request):
+        """Setup-Datei für das Update per Knopf – lädt der Helfer selbst mit seinem Token."""
+        if not token_gleich(token_aus_header(request), str(cfg.helper_token or "")):
+            raise HTTPException(401, "Helfer-Token fehlt oder ist ungültig.",
+                                headers={"WWW-Authenticate": "Bearer"})
+        setup = installer_pfad()
+        if setup is None:
+            raise HTTPException(404, INSTALLER_FEHLT)
+        try:
+            sha = setup_sha256(setup)
+        except OSError as e:
+            raise HTTPException(500, f"Setup-Datei nicht lesbar: {e}")
+        headers = {"Cache-Control": "no-store", "X-Setup-Sha256": sha,
+                   "X-Setup-Version": setup_version(setup) or ""}
+        return FileResponse(setup, media_type="application/octet-stream", filename=SETUP_NAME, headers=headers)
 
     @app.get("/api/helfer/download")
     def helper_download(request: Request):

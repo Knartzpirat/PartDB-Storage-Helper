@@ -13,6 +13,11 @@ meldet sich mit `hallo` + Token an, schickt alle ~10 s seinen Status und führt 
   ordner            {dateien: [{name, inhalt}], pfad} -> {"ordner"}
   datei             {name}                            -> {"name", "sha256", "daten"}   (Abgleich)
   vorlage_speichern {name, sha256, daten, ueberschreiben} -> {"name", "sha256", "pfad"}
+  aktualisieren     {pfad, version, sha256}           -> {"version", "datei"}   (nur installierter Helfer)
+`aktualisieren`: Setup über die eigene Server-Adresse + pfad mit dem Helfer-Token laden, sha256
+prüfen, in %TEMP%\\Labeltool-Helfer-Update\\ ablegen, mit Administratorrechten starten
+(/SILENT /SUPPRESSMSGBOXES /NORESTART /UPDATE), antworten und sich danach beenden – der Installer
+startet den Helfer neu. hallo/status melden dafür "installiert" (gepackt) und "version".
 `vorlage` = {"name", "sha256", "daten"?: base64}; ohne `daten` aus dem Cache, fehlt sie dort ->
 Antwort mit code "vorlage_fehlt", der Server schickt sie dann mit. `inhalt` = base64.
 
@@ -43,6 +48,8 @@ import socket
 import sys
 import threading
 import time
+import urllib.error
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -66,6 +73,13 @@ CACHE_KEEP = 200             # so viele Vorlagenfassungen bleiben im Cache
 STABLE_AGE = 2.0             # s – jüngere Dateien schreibt der P-touch Editor evtl. noch
 UNREADY = "wird gerade gespeichert – nächster Versuch gleich"
 FILE_JOBS = ("datei", "vorlage_speichern")    # Dateiarbeit: eigener Thread, blockiert Vorschau/Druck nicht
+UPDATE_JOB = "aktualisieren"                    # eigener Thread: Download + Administratorabfrage dauern
+UPDATE_ORDNER = "Labeltool-Helfer-Update"       # in %TEMP%
+UPDATE_PARAMETER = "/SILENT /SUPPRESSMSGBOXES /NORESTART /UPDATE"
+UPDATE_TIMEOUT = 120.0                          # s – je Lese-/Verbindungsschritt des Downloads
+UPDATE_MAX = 512 * 1024 * 1024                  # Obergrenze der Setup-Datei
+UPDATE_PAUSE = 1.5                              # s – nach der Antwort, dann beendet sich der Helfer
+ERROR_CANCELLED = 1223                          # Windows: Administratorabfrage abgelehnt
 CLOSE_TEXT = {
     4401: "Token abgelehnt – in helfer.yaml den aktuellen Helfer-Token eintragen (Einstellungen > Helfer).",
     4000: "Ein anderer Helfer hat sich am Server angemeldet und diesen ersetzt.",
@@ -88,6 +102,10 @@ class CacheMiss(Exception):
 
 class NotReady(Exception):
     """Datei wird gerade geschrieben/ist gesperrt – später erneut versuchen."""
+
+
+class UpdateFehler(Exception):
+    """Update per Knopf nicht möglich (Download, Prüfsumme, Administratorabfrage …)."""
 
 
 # ------------------------------------------------------------------ Konfiguration
@@ -401,6 +419,155 @@ def ws_url(server: str) -> str:
     if not base.endswith(WS_PATH):
         base = f"{base}/{WS_PATH}" if base else WS_PATH
     return f"{scheme}://{host}/{base}"
+
+
+def server_basis(server: str) -> str:
+    """http(s)://host:port[/pfad] ohne abschließenden / (ws(s):// wird zu http(s)://)."""
+    s = server.strip().rstrip("/")
+    if "://" not in s:
+        s = "http://" + s
+    scheme, rest = s.split("://", 1)
+    scheme = {"http": "http", "https": "https", "ws": "http", "wss": "https"}.get(scheme.lower())
+    host, _, base = rest.partition("/")
+    if not scheme or not host:
+        raise HelferConfigError(f"Server-Adresse '{server}' verstehe ich nicht – Beispiel: http://unraid:8765")
+    base = base.strip("/")
+    if base.endswith(WS_PATH):
+        base = base[: -len(WS_PATH)].strip("/")
+    return f"{scheme}://{host}" + (f"/{base}" if base else "")
+
+
+# ------------------------------------------------------------------ Update per Knopf
+APP_ID = "{8C1E5B4F-3A7D-4E2B-9F61-2D7C5A0B9E43}"   # = AppId in installer\labeltool-helfer.iss
+
+
+def update_ordner() -> Path:
+    import tempfile
+    return Path(tempfile.gettempdir()) / UPDATE_ORDNER
+
+
+def installation_pro_benutzer(ordner: Path | None = None) -> bool:
+    """Wurde dieser Programmordner nur für den aktuellen Benutzer installiert (/CURRENTUSER)?
+
+    Dann braucht auch das Update keine Administratorrechte (und muss /CURRENTUSER bekommen, sonst
+    landet eine zweite Installation unter Program Files)."""
+    if sys.platform != "win32":
+        return False
+    import winreg
+    ordner = Path(ordner or programm_ordner())
+    schluessel = rf"Software\Microsoft\Windows\CurrentVersion\Uninstall\{APP_ID}_is1"
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, schluessel) as k:
+            ort = str(winreg.QueryValueEx(k, "InstallLocation")[0] or "")
+    except OSError:
+        return False
+    if not ort.strip():
+        return False
+    norm = lambda p: os.path.normcase(os.path.abspath(str(p))).rstrip("\\/")
+    return norm(ort) == norm(ordner)
+
+
+def setup_ausfuehren(datei: Path, parameter: str, erhoeht: bool = True) -> None:
+    """Setup per ShellExecuteEx starten – erhoeht=True mit „runas“ (Windows-Administratorabfrage).
+
+    Fehler -> OSError mit .winerror (1223 = Abfrage abgelehnt)."""
+    if sys.platform != "win32":
+        raise UpdateFehler("Update per Knopf geht nur unter Windows.")
+    import ctypes
+    from ctypes import wintypes
+
+    class SHELLEXECUTEINFOW(ctypes.Structure):
+        _fields_ = [("cbSize", wintypes.DWORD), ("fMask", wintypes.ULONG), ("hwnd", wintypes.HWND),
+                    ("lpVerb", wintypes.LPCWSTR), ("lpFile", wintypes.LPCWSTR),
+                    ("lpParameters", wintypes.LPCWSTR), ("lpDirectory", wintypes.LPCWSTR),
+                    ("nShow", ctypes.c_int), ("hInstApp", wintypes.HINSTANCE), ("lpIDList", ctypes.c_void_p),
+                    ("lpClass", wintypes.LPCWSTR), ("hkeyClass", wintypes.HKEY), ("dwHotKey", wintypes.DWORD),
+                    ("hIconOrMonitor", wintypes.HANDLE), ("hProcess", wintypes.HANDLE)]
+
+    shell32 = ctypes.WinDLL("shell32", use_last_error=True)
+    fn = shell32.ShellExecuteExW
+    fn.restype, fn.argtypes = wintypes.BOOL, (ctypes.POINTER(SHELLEXECUTEINFOW),)
+    info = SHELLEXECUTEINFOW()
+    info.cbSize = ctypes.sizeof(info)
+    info.fMask = 0x40 | 0x100 | 0x400          # NOCLOSEPROCESS | NOASYNC | FLAG_NO_UI
+    info.lpVerb = "runas" if erhoeht else "open"
+    info.lpFile = str(datei)
+    info.lpParameters = parameter
+    info.lpDirectory = str(Path(datei).parent)
+    info.nShow = 1                              # SW_SHOWNORMAL (Fortschrittsfenster bei /SILENT)
+    if not fn(ctypes.byref(info)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    if info.hProcess:
+        ctypes.windll.kernel32.CloseHandle(info.hProcess)
+
+
+class _KeineUmleitung(urllib.request.HTTPRedirectHandler):
+    """Den Token nie an eine andere Adresse weiterreichen: Umleitungen = Fehler."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def setup_laden(url: str, token: str, sha: str, ziel_ordner: Path, version: str,
+                timeout: float = UPDATE_TIMEOUT, max_bytes: int = UPDATE_MAX) -> Path:
+    """Setup-Datei mit Token laden, sha256 prüfen, unter ziel_ordner ablegen -> Pfad. Fehler: UpdateFehler."""
+    ziel_ordner = Path(ziel_ordner)
+    try:
+        ziel_ordner.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        raise UpdateFehler(f"Update-Ordner {ziel_ordner} nicht anlegbar: {e.strerror or e}")
+    sicher = re.sub(r"[^0-9A-Za-z._+-]", "_", version or "")[:40] or "neu"
+    ziel = ziel_ordner / f"Labeltool-Helfer-Setup-{sicher}.exe"
+    teil = ziel_ordner / f".{ziel.name}.{os.getpid()}.part"
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}",
+                                               "User-Agent": f"Labeltool-Helfer/{__version__}"})
+    opener = urllib.request.build_opener(_KeineUmleitung)
+    h = hashlib.sha256()
+    n = 0
+    try:
+        with opener.open(req, timeout=timeout) as resp, open(teil, "wb") as f:
+            while True:
+                block = resp.read(256 * 1024)
+                if not block:
+                    break
+                n += len(block)
+                if n > max_bytes:
+                    raise UpdateFehler(f"Setup-Datei ist größer als {max_bytes // 2**20} MB – abgebrochen.")
+                h.update(block)
+                f.write(block)
+    except urllib.error.HTTPError as e:
+        teil.unlink(missing_ok=True)
+        grund = {401: "Server hat den Helfer-Token abgelehnt", 403: "Zugriff verweigert",
+                 404: "Setup-Datei auf dem Server nicht gefunden"}.get(e.code, "Server meldet einen Fehler")
+        if 300 <= e.code < 400:
+            grund = "Server leitet um (nicht erlaubt)"
+        raise UpdateFehler(f"Download des Setups fehlgeschlagen: {grund} (HTTP {e.code}).")
+    except urllib.error.URLError as e:
+        teil.unlink(missing_ok=True)
+        raise UpdateFehler(f"Download des Setups fehlgeschlagen: Server nicht erreichbar ({e.reason}).")
+    except UpdateFehler:
+        teil.unlink(missing_ok=True)
+        raise
+    except (OSError, ValueError) as e:      # Zeitüberschreitung, abgebrochene Verbindung, Platte voll …
+        teil.unlink(missing_ok=True)
+        raise UpdateFehler(f"Download des Setups fehlgeschlagen: {e or type(e).__name__}.")
+    if h.hexdigest() != sha:
+        teil.unlink(missing_ok=True)
+        raise UpdateFehler("Prüfsumme der heruntergeladenen Setup-Datei passt nicht (sha256) – "
+                           "Download beschädigt, Update abgebrochen.")
+    try:
+        os.replace(teil, ziel)
+    except OSError:                          # alte Datei gesperrt (Setup läuft noch?) -> eigener Name
+        ziel = ziel.with_name(f"{ziel.stem}-{int(time.time())}.exe")
+        os.replace(teil, ziel)
+    for alt in ziel_ordner.iterdir():        # ältere Downloads aufräumen (gesperrte bleiben liegen)
+        if alt != ziel and alt.suffix.lower() in (".exe", ".part"):
+            try:
+                alt.unlink()
+            except OSError:
+                pass
+    log.info("Setup geladen: %s (%d Bytes, sha256 ok)", ziel, n)
+    return ziel
 
 
 def printer_for_model(model: str, names: list[str]) -> str | None:
