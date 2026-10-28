@@ -347,53 +347,72 @@ def _renderable(template: Path):
 @on_com_thread
 def print_labels(template: Path, rows: list[dict], printer: str, flags: int) -> int:
     """Druckt ein Label je Zeile mit der Originalvorlage (wird nicht gespeichert)."""
-    if not template.is_file():
-        raise BpacError(f"Vorlage nicht gefunden: {template}")
+    return print_batch([(template, rows)], printer, flags)
+
+
+@on_com_thread
+def print_batch(jobs: list[tuple[Path, list[dict]]], printer: str, flags: int) -> int:
+    """Mehrere Vorlagen mit ihren Zeilen in EINEM Druckauftrag – ein Vorlauf, Autocut dazwischen.
+
+    Muster aus der b-PAC-Hilfe ("Continue to print different templates"): StartPrint, dann je Label
+    Open -> Texte -> PrintOut, zum Schluss EndPrint. Wird die Vorlage vor StartPrint geöffnet, wird jedes
+    PrintOut ein eigener Auftrag ("1 von 1") mit Vorlauf und Schnitt. Optionen nur bei StartPrint.
+    b-PAC beendet den Auftrag selbst, wenn eine Vorlage mit anderer Bandbreite geöffnet wird.
+    """
+    jobs = [(Path(t), list(r)) for t, r in jobs if r]
+    for t, _ in jobs:
+        if not t.is_file():
+            raise BpacError(f"Vorlage nicht gefunden: {t}")
+    if not jobs:
+        return 0
     client = _com()
 
-    with _lock, _renderable(Path(template)) as source:
-        fields = merge_fields(source)
+    with _lock, contextlib.ExitStack() as stack:
         com_init()
         doc = _dispatch(client)
-        # 1) Vorlage prüfen (Objektabgleich) und Drucker bestimmen – noch ohne Druckauftrag
-        _, mapping = _open(doc, source, fields)
-        try:
-            if printer:
-                # SetPrinter meldet auch bei unbekanntem Namen True und druckt dann auf den
-                # Drucker aus der Vorlage – deshalb vorher gegen die installierten prüfen.
-                installed = [str(p) for p in (_call(doc.Printer, "GetInstalledPrinters") or [])]
-                if printer not in installed:
-                    raise BpacError(f"Drucker '{printer}' konnte nicht gewählt werden. "
-                                    f"Installiert: {', '.join(installed) or 'keiner'}")
+        # 1) Alle Vorlagen prüfen (Objektabgleich) und Drucker bestimmen – noch ohne Druckauftrag
+        prepared, name = [], printer
+        for template, rows in jobs:
+            source = stack.enter_context(_renderable(template))
+            fields = merge_fields(source)
+            _, mapping = _open(doc, source, fields)
             try:
-                name = printer or str(_call(doc, "GetPrinterName") or "")
-            except Exception:
-                name = printer
-        finally:
-            _close(doc)
-        if not rows:
-            return 0
+                if printer and not prepared:
+                    # SetPrinter meldet auch bei unbekanntem Namen True und druckt dann auf den
+                    # Drucker aus der Vorlage – deshalb vorher gegen die installierten prüfen.
+                    installed = [str(p) for p in (_call(doc.Printer, "GetInstalledPrinters") or [])]
+                    if printer not in installed:
+                        raise BpacError(f"Drucker '{printer}' konnte nicht gewählt werden. "
+                                        f"Installiert: {', '.join(installed) or 'keiner'}")
+                if not name:
+                    try:
+                        name = str(_call(doc, "GetPrinterName") or "")
+                    except Exception:
+                        name = ""
+            finally:
+                _close(doc)
+            prepared.append((source, fields, mapping, rows))
         flags = flags_for_printer(flags, name)
 
-        # 2) EIN Auftrag für alle Labels, wie im b-PAC-Beispiel "Continue to print different templates":
-        #    erst StartPrint, dann je Label Open -> Texte -> PrintOut, zum Schluss EndPrint. Wird die
-        #    Vorlage vor StartPrint geöffnet, wird jedes PrintOut ein eigener Auftrag ("1 von 1") –
-        #    mit Vorlauf und Schnitt vor jedem Label. Optionen nur bei StartPrint (PrintOut: 0).
+        # 2) EIN Auftrag für alle Labels aller Vorlagen
         if not doc.StartPrint("", flags):
             raise BpacError(f"Druckstart fehlgeschlagen (Fehler {doc.ErrorCode}).")
+        count = 0
         try:
-            for row in rows:
-                objects, _ = _open(doc, source, fields)
-                if printer and not doc.SetPrinter(printer, True):
-                    raise BpacError(f"Drucker '{printer}' konnte nicht gewählt werden.")
-                _fill(objects, mapping, row)
-                if not doc.PrintOut(1, 0):
-                    raise BpacError(f"Label konnte nicht in den Druckauftrag (Fehler {doc.ErrorCode}).")
+            for source, fields, mapping, rows in prepared:
+                for row in rows:
+                    objects, _ = _open(doc, source, fields)
+                    if printer and not doc.SetPrinter(printer, True):
+                        raise BpacError(f"Drucker '{printer}' konnte nicht gewählt werden.")
+                    _fill(objects, mapping, row)
+                    if not doc.PrintOut(1, 0):
+                        raise BpacError(f"Label konnte nicht in den Druckauftrag (Fehler {doc.ErrorCode}).")
+                    count += 1
             if not _call(doc, "EndPrint"):
                 raise BpacError(f"Drucken fehlgeschlagen (Fehler {doc.ErrorCode}). Drucker an und Band eingelegt?")
         finally:
             _close(doc)
-    return len(rows)
+    return count
 
 
 @on_com_thread

@@ -733,7 +733,7 @@ class HelferKern:
             except Exception as e:
                 s = {"angeschlossen": None, "status_text": f"Status nicht lesbar: {e}"}
             states[name] = {"angeschlossen": s.get("angeschlossen"), "status_text": s.get("status_text", "")}
-        return {"protokoll": PROTOKOLL, "rechner": self.hostname, "version": __version__,
+        return {"protokoll": PROTOKOLL, "sammeldruck": True, "rechner": self.hostname, "version": __version__,
                 "installiert": self.installiert, "bpac": avail,
                 "bpac_grund": "" if avail else (st.get("grund") or "b-PAC nicht verfügbar"),
                 "drucker_liste": names, "drucker": self.printer_name(names), "drucker_status": states,
@@ -886,6 +886,36 @@ class HelferKern:
         extra = {"dpi": min(max(int(dpi), 90), 720)} if isinstance(dpi, int) and dpi > 0 else {}
         png = self.printer.render_png(path, dict(msg.get("zeile") or {}), **extra)
         return {"png": base64.b64encode(png).decode("ascii")}
+
+    def _job_drucken_sammel(self, msg: dict) -> dict:
+        """Mehrere Vorlagen in einem Druckauftrag (ein Vorlauf, Autocut dazwischen)."""
+        teile = msg.get("teile") or []
+        if not isinstance(teile, list) or not teile:
+            raise ValueError("Sammeldruck ohne Teile.")
+        jobs = [(self.cache.get(t.get("vorlage")), list(t.get("zeilen") or [])) for t in teile]
+        name = self._druckername(str(msg.get("drucker") or ""))
+        anzahl = sum(len(r) for _, r in jobs)
+        log.info("Drucke %d Label(s) aus %d Vorlage(n) in einem Auftrag …", anzahl, len(jobs))
+        batch = getattr(self.printer, "print_batch", None)
+        if batch is None:
+            n = sum(self.printer.print_labels(p, r, name, int(msg.get("flags") or 0)) for p, r in jobs)
+        else:
+            n = batch(jobs, name, int(msg.get("flags") or 0))
+        log.info("Gedruckt: %d Label(s).", n)
+        return {"gedruckt": n}
+
+    def _druckername(self, name: str) -> str:
+        """Drucker für den Auftrag wählen und prüfen, dass er verbunden ist (sonst nichts senden)."""
+        name = name or self.cfg.drucker
+        names = None
+        if not name and self.cfg.drucker_modell:   # Drucker passend zum Modell
+            names = self.printer.status("").get("drucker") or []
+            name = printer_for_model(self.cfg.drucker_modell, names) or ""
+        check = name
+        if not check:   # Drucker aus der Vorlage – b-PAC nimmt dann den (einzigen) P-touch
+            check = default_printer(names if names is not None else self.printer.status("").get("drucker") or [])
+        require_online(check, self.state_fn)
+        return name
 
     def _job_drucken(self, msg: dict) -> dict:
         path = self.cache.get(msg.get("vorlage"))

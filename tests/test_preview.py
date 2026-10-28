@@ -371,3 +371,17 @@ def test_render_png_live():
     # es ist tatsächlich etwas schwarz und überwiegend weiß
     bits = bin(int.from_bytes(raw, "big")).count("1")
     assert 0.5 * w * h < bits < w * h
+
+
+def test_print_batch_ein_auftrag_fuer_mehrere_vorlagen(fake_com, tmp_path):
+    """Mehrere Vorlagen: ein StartPrint/EndPrint, dazwischen je Label Open -> PrintOut."""
+    zweite = tmp_path / "Zweite.lbx"
+    zweite.write_bytes(BOX.read_bytes())
+    rows2 = [{**BOX_ROW, "Lagername": "B-1"}, {**BOX_ROW, "Lagername": "B-2"}]
+    assert bpac.print_batch([(BOX, [BOX_ROW]), (zweite, rows2), (BOX, [])], "Brother PT-P710BT", 0x1) == 3
+    calls = fake_com[-1].calls
+    names = [c if isinstance(c, str) else c[0] for c in calls]
+    assert names.count("StartPrint") == 1 and names.count("EndPrint") == 1 and names.count("PrintOut") == 3
+    assert names.index("StartPrint") < names.index("PrintOut") and names[-2:] == ["EndPrint", "Close"]
+    gedruckt = [c[1][0] for c in calls if isinstance(c, tuple) and c[0] == "PrintOut"]
+    assert gedruckt == ["MIC-2.0021", "B-1", "B-2"]

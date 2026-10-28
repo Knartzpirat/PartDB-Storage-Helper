@@ -410,3 +410,36 @@ def test_lokaler_drucker_offline_druckt_nicht():
     local = helfer_server.LocalPrinter(module=prn, state_fn=online)
     assert local.print_labels(Path("x.lbx"), [{}], DRUCKER, 0) == 1 and local.status("")["ok"] is True
     assert isinstance(helfer_server.HelperError("x"), bpac.BpacError)
+
+
+class FakeBatchBpac(FakeBpac):
+    def __init__(self):
+        super().__init__()
+        self.batches = []
+
+    def print_batch(self, jobs, printer, flags):
+        self.batches.append(([(Path(t).name, rows) for t, rows in jobs], printer, flags))
+        return sum(len(r) for _, r in jobs)
+
+
+def test_sammeldruck_ueber_helfer(tmp_path):
+    """Bauteil-Labels zweier Lagerarten -> EIN Auftrag beim Helfer (drucken_sammel)."""
+    c, cfg, kern, prn, opened = setup(tmp_path)
+    kern.printer = prn = FakeBatchBpac()
+    with connected(c, kern):
+        r = c.post("/api/content-labels/nachdruck", json={"ids": [203, 250], "direkt": True})
+        assert r.status_code == 200, r.text
+    assert len(prn.batches) == 1 and prn.jobs == []
+    vorlagen, printer, flags = prn.batches[0]
+    assert sorted(n for n, _ in vorlagen) == ["PartDB_3U-3.lbx", "PartDB_Window-Div-Bin-2.lbx"]
+    assert printer == DRUCKER and flags == 0x1
+
+
+def test_sammeldruck_alter_helfer_einzeln(tmp_path):
+    """Helfer ohne Fähigkeit "sammeldruck" bekommt wie bisher je Vorlage einen Auftrag."""
+    c, cfg, kern, prn, opened = setup(tmp_path)
+    info = kern.info
+    kern.info = lambda: {k: v for k, v in info().items() if k != "sammeldruck"}
+    with connected(c, kern):
+        assert c.post("/api/content-labels/nachdruck", json={"ids": [203, 250], "direkt": True}).status_code == 200
+    assert sorted(j[0] for j in prn.jobs) == ["PartDB_3U-3.lbx", "PartDB_Window-Div-Bin-2.lbx"]

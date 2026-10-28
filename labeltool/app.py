@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from . import bpac, helfer_server, routes_einstellungen, routes_helfer_download, vorlagen
+from . import lbx as lbx_mod
 from .config import BoxType, Category, Config
 from .labels import (NAME_COLUMNS, build_content_labels, content_label_for_box, export_content_labels,
                      has_tag, join_unique, make_content_label, name_label_rows, parts_by_location, remove_tag,
@@ -576,10 +577,28 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
             else:
                 skipped.append(f"{l.box.name} ({l.box.box_type or 'ohne Lagerart'})")
         printed, done = [], []
-        for lbx, labs in by_template.items():
-            printer.print_labels(cfg.template_dir / lbx, [l.row(cfg) for l in labs], cfg.printer, flags)
-            printed.append({"vorlage": lbx, "labels": len(labs)})
-            done.extend(labs)
+        if not by_template:
+            return printed, skipped, done
+        # Alle Vorlagen in EINEM Druckauftrag (ein Vorlauf, Autocut dazwischen) – je Bandbreite,
+        # denn eine Vorlage mit anderer Bandbreite beendet den Auftrag in b-PAC ohnehin.
+        by_tape: dict[object, list] = {}
+        for lbx in by_template:
+            try:
+                tape = lbx_mod.parse(cfg.template_dir / lbx).tape_mm
+            except Exception:
+                tape = None
+            by_tape.setdefault(tape, []).append(lbx)
+        batch = getattr(printer, "print_batch", None)
+        for names in by_tape.values():
+            jobs = [(cfg.template_dir / lbx, [l.row(cfg) for l in by_template[lbx]]) for lbx in names]
+            if batch is not None:
+                batch(jobs, cfg.printer, flags)
+            else:   # Drucker-Objekte ohne Sammeldruck (z. B. Test-Attrappen)
+                for path, rows in jobs:
+                    printer.print_labels(path, rows, cfg.printer, flags)
+            for lbx in names:
+                printed.append({"vorlage": lbx, "labels": len(by_template[lbx])})
+                done.extend(by_template[lbx])
         return printed, skipped, done
 
     @app.get("/api/content-labels")

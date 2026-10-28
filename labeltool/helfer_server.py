@@ -77,7 +77,7 @@ UPD_NOT_INSTALLED = ("Der Helfer läuft ohne Installation (Python-/ZIP-Paket) �
                      "installierten Helfer. Bitte den Installer verwenden (Einstellungen > Druck-Helfer).")
 OLD_HELPER = "Der Druck-Helfer ist veraltet (kein Vorlagen-Abgleich) – neue Version unter Einstellungen > Helfer laden."
 INFO_KEYS = ("rechner", "version", "bpac", "bpac_grund", "drucker_liste", "drucker", "drucker_status",
-             "protokoll", "drucker_modell", "vorlagen_ordner", "installiert")
+             "protokoll", "drucker_modell", "vorlagen_ordner", "installiert", "sammeldruck")
 _VERSION_NUM = re.compile(r"(\d+)\.(\d+)\.(\d+)")
 _SHA_RE = re.compile(r"[0-9a-f]{64}")
 
@@ -715,6 +715,35 @@ class HelperHub:
             fut.cancel()
             raise HelperError(f"Der Druck-Helfer hat nicht rechtzeitig geantwortet ({timeout:g} s).")
 
+    def call_batch(self, typ: str, payload: dict, parts: list[tuple[Path, dict]], timeout: float) -> dict:
+        """Wie call(), aber mit mehreren Vorlagen: payload["teile"] = [{"vorlage", **teil}, …]."""
+        conn = self.connection()
+        if conn is None:
+            raise HelperError(NOT_CONNECTED)
+        files = []
+        for template, extra in parts:
+            template = Path(template)
+            if not template.is_file():
+                raise HelperError(f"Vorlage nicht gefunden: {template}")
+            data = template.read_bytes()
+            files.append((template, hashlib.sha256(data).hexdigest(), data, extra))
+        for attempt in range(2):
+            teile = []
+            for template, sha, data, extra in files:
+                tpl = {"name": template.name, "sha256": sha}
+                if sha not in conn.known or attempt:
+                    tpl["daten"] = base64.b64encode(data).decode("ascii")
+                teile.append(dict(extra, vorlage=tpl))
+            answer = self.request(dict(payload, typ=typ, teile=teile), timeout, conn)
+            if answer.get("ok"):
+                conn.known.update(sha for _, sha, _, _ in files)
+                return answer.get("daten") or {}
+            if answer.get("code") == "vorlage_fehlt" and not attempt:
+                conn.known.difference_update(sha for _, sha, _, _ in files)
+                continue
+            break
+        raise HelperError(str(answer.get("fehler") or "Unbekannter Fehler im Druck-Helfer."))
+
     def call(self, typ: str, payload: dict, timeout: float, template: Path | None = None) -> dict:
         """Auftrag ausführen und `daten` liefern; Fehler des Helfers -> HelperError.
 
@@ -832,6 +861,15 @@ class HelperPrinter:
                               TIMEOUT_PRINT, template=template)
         return int(daten.get("gedruckt", len(rows)))
 
+    def print_batch(self, jobs: list[tuple[Path, list[dict]]], printer: str, flags: int) -> int:
+        """Ein Druckauftrag über mehrere Vorlagen; ältere Helfer drucken je Vorlage einzeln."""
+        jobs = [(Path(t), list(r)) for t, r in jobs if r]
+        if not self.hub.info().get("sammeldruck"):
+            return sum(self.print_labels(t, r, printer, flags) for t, r in jobs)
+        daten = self.hub.call_batch("drucken_sammel", {"drucker": printer or "", "flags": int(flags)},
+                                    [(t, {"zeilen": r}) for t, r in jobs], TIMEOUT_PRINT)
+        return int(daten.get("gedruckt", sum(len(r) for _, r in jobs)))
+
 
 def _file_spec(path: Path) -> dict:
     """CSV als {"name", "inhalt": base64} – der Helfer legt sie lokal ab (keine Server-Pfade nötig)."""
@@ -946,6 +984,19 @@ class LocalPrinter:
         require_online(name, self.state_fn)
         return self.module.print_labels(template, rows, printer, flags)
 
+    def print_batch(self, jobs, printer: str, flags: int) -> int:
+        batch = getattr(self.module, "print_batch", None)
+        if batch is None:            # z. B. Test-Attrappen ohne Sammeldruck
+            return sum(self.print_labels(t, r, printer, flags) for t, r in jobs if r)
+        name = printer
+        if not name:
+            try:
+                name = default_printer(self.module.status("").get("drucker") or [])
+            except Exception:
+                name = None
+        require_online(name, self.state_fn)
+        return batch(jobs, printer, flags)
+
 
 class ModePrinter:
     """Wählt bei jedem Aufruf je nach cfg.print_mode lokal oder Helfer."""
@@ -972,6 +1023,9 @@ class ModePrinter:
 
     def print_labels(self, template, rows, printer, flags):
         return self.current().print_labels(template, rows, printer, flags)
+
+    def print_batch(self, jobs, printer, flags):
+        return self.current().print_batch(jobs, printer, flags)
 
 
 class ModeDesktop:
