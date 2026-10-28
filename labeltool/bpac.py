@@ -355,27 +355,37 @@ def print_labels(template: Path, rows: list[dict], printer: str, flags: int) -> 
         fields = merge_fields(source)
         com_init()
         doc = _dispatch(client)
-        objects, mapping = _open(doc, source, fields)
+        # 1) Vorlage prüfen (Objektabgleich) und Drucker bestimmen – noch ohne Druckauftrag
+        _, mapping = _open(doc, source, fields)
         try:
             if printer:
                 # SetPrinter meldet auch bei unbekanntem Namen True und druckt dann auf den
                 # Drucker aus der Vorlage – deshalb vorher gegen die installierten prüfen.
                 installed = [str(p) for p in (_call(doc.Printer, "GetInstalledPrinters") or [])]
-                if printer not in installed or not doc.SetPrinter(printer, True):
+                if printer not in installed:
                     raise BpacError(f"Drucker '{printer}' konnte nicht gewählt werden. "
                                     f"Installiert: {', '.join(installed) or 'keiner'}")
-            if not rows:
-                return 0
             try:
-                name = printer or str(doc.Printer.Name or "")
+                name = printer or str(_call(doc, "GetPrinterName") or "")
             except Exception:
                 name = printer
-            flags = flags_for_printer(flags, name)
-            # Ein Druckauftrag für alle Labels: Optionen nur bei StartPrint – bei PrintOut ist der
-            # Parameter laut b-PAC-Hilfe ohne Wirkung und soll 0 sein.
-            if not doc.StartPrint("", flags):
-                raise BpacError(f"Druckstart fehlgeschlagen (Fehler {doc.ErrorCode}).")
+        finally:
+            _close(doc)
+        if not rows:
+            return 0
+        flags = flags_for_printer(flags, name)
+
+        # 2) EIN Auftrag für alle Labels, wie im b-PAC-Beispiel "Continue to print different templates":
+        #    erst StartPrint, dann je Label Open -> Texte -> PrintOut, zum Schluss EndPrint. Wird die
+        #    Vorlage vor StartPrint geöffnet, wird jedes PrintOut ein eigener Auftrag ("1 von 1") –
+        #    mit Vorlauf und Schnitt vor jedem Label. Optionen nur bei StartPrint (PrintOut: 0).
+        if not doc.StartPrint("", flags):
+            raise BpacError(f"Druckstart fehlgeschlagen (Fehler {doc.ErrorCode}).")
+        try:
             for row in rows:
+                objects, _ = _open(doc, source, fields)
+                if printer and not doc.SetPrinter(printer, True):
+                    raise BpacError(f"Drucker '{printer}' konnte nicht gewählt werden.")
                 _fill(objects, mapping, row)
                 if not doc.PrintOut(1, 0):
                     raise BpacError(f"Label konnte nicht in den Druckauftrag (Fehler {doc.ErrorCode}).")

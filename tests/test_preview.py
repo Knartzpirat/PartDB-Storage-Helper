@@ -242,16 +242,19 @@ class FakeDoc:
 
     SaveAs = Save
 
+    def GetPrinterName(self):
+        return "Brother PT-P710BT"
+
     def SetPrinter(self, name, fit):
         self.calls.append("SetPrinter")
         return True                                # b-PAC sagt auch bei Unsinn True
 
     def StartPrint(self, name, flags):
-        self.calls.append("StartPrint")
+        self.calls.append(("StartPrint", flags))
         return True
 
     def PrintOut(self, copies, flags):
-        self.calls.append(("PrintOut", tuple(i.Text for i in self.Objects.items)))
+        self.calls.append(("PrintOut", tuple(i.Text for i in self.Objects.items), flags))
         return True
 
     def EndPrint(self):
@@ -312,16 +315,28 @@ def test_print_labels_unbekannter_drucker_druckt_nicht(fake_com):
     with pytest.raises(bpac.BpacError, match="Gibt-es-nicht"):
         bpac.print_labels(BOX, [BOX_ROW], "Gibt-es-nicht", 0)
     calls = fake_com[-1].calls
-    assert "StartPrint" not in calls and calls[-1] == "Close"
+    assert not any(c[0] == "StartPrint" for c in calls if isinstance(c, tuple)) and calls[-1] == "Close"
 
 
 def test_print_labels_ablauf(fake_com):
+    """Ein Auftrag wie im b-PAC-Beispiel: StartPrint, je Label Open -> PrintOut, dann EndPrint."""
     rows = [BOX_ROW, {**BOX_ROW, "Lagername": "MIC-2.0022"}]
-    assert bpac.print_labels(BOX, rows, "Brother PT-P710BT", 0) == 2
+    assert bpac.print_labels(BOX, rows, "Brother PT-P710BT", 0x1 | 0x4000000) == 2
     calls = fake_com[-1].calls
     names = [c if isinstance(c, str) else c[0] for c in calls]
-    assert names == ["Open", "SetPrinter", "StartPrint", "PrintOut", "PrintOut", "EndPrint", "Close"]
-    assert calls[4][1][0] == "MIC-2.0022"
+    assert names == ["Open", "Close", "StartPrint", "Open", "SetPrinter", "PrintOut",
+                     "Open", "SetPrinter", "PrintOut", "EndPrint", "Close"]
+    assert calls[2] == ("StartPrint", 0x1)            # PT-P710BT: "Schnitt am Ende" entfernt
+    printouts = [c for c in calls if isinstance(c, tuple) and c[0] == "PrintOut"]
+    assert [p[2] for p in printouts] == [0, 0]          # PrintOut immer mit 0
+    assert printouts[1][1][0] == "MIC-2.0022"
+
+
+def test_print_labels_drucker_aus_vorlage(fake_com):
+    """Ohne Druckerangabe zählt das Modell der Vorlage (GetPrinterName) für die Schnittoptionen."""
+    assert bpac.print_labels(BOX, [BOX_ROW], "", 0x1 | 0x4000000) == 1
+    calls = fake_com[-1].calls
+    assert ("StartPrint", 0x1) in calls and "SetPrinter" not in calls
 
 
 def test_call_nutzt_dispatch_method():
