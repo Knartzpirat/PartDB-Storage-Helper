@@ -82,6 +82,7 @@
   .msg { padding: 10px 14px; border-radius: 6px; margin-top: 12px; display: none; white-space: pre-wrap; }
   .msg.ok { display: block; background: var(--ok-bg); }
   .msg.err { display: block; background: var(--err-bg); color: var(--err); }
+  .msg.busy { display: block; background: var(--warn-bg); color: var(--warn); }
   .warn { color: var(--warn); background: var(--warn-bg); padding: 4px 8px; border-radius: 4px; font-size: 13px; margin-top: 6px; }
   .label24 { display: grid; gap: 2px; margin-top: 8px; }
   .slot { border: 1px dashed var(--line); border-radius: 4px; padding: 4px 6px; font-size: 13px; min-height: 42px; }
@@ -368,6 +369,14 @@
     <div class="panel" id="set-helfer" tabindex="-1">
       <h2>Druck-Helfer <span class="muted">Windows-PC mit P-touch Editor und Drucker</span></h2>
       <dl class="kv" id="s-helper-info"></dl>
+      <div id="s-upd" hidden>
+        <div class="row">
+          <button type="button" class="btn primary" id="s-upd-btn">Helfer aktualisieren</button>
+          <span class="muted" id="s-upd-text"></span>
+        </div>
+        <p class="hint" id="s-upd-hint">Der Helfer lädt das Setup vom Server und startet es. Am Windows-PC fragt Windows nach Administratorrechten (Benutzerkontensteuerung) – dort mit „Ja“ bestätigen. Einstellungen und Autostart bleiben erhalten.</p>
+        <div class="msg" id="m-upd" role="status" aria-live="polite"></div>
+      </div>
       <div id="s-inst" hidden>
         <div class="row">
           <a class="btn primary" id="s-inst-dl" href="/api/helfer/installer" download="Labeltool-Helfer-Installer.zip">Installer herunterladen (empfohlen)</a>
@@ -376,7 +385,7 @@
           <li>ZIP herunterladen und <strong>entpacken</strong> (Rechtsklick → „Alle extrahieren …“) – Setup und <span class="mono">helfer.vorgabe.yaml</span> müssen im selben Ordner liegen.</li>
           <li><span class="mono">Labeltool-Helfer-Setup.exe</span> starten. Meldet Windows SmartScreen „Der Computer wurde durch Windows geschützt“: „Weitere Informationen“ → „Trotzdem ausführen“; die Rückfrage nach Administratorrechten mit „Ja“ bestätigen.</li>
           <li>Installieren (Autostart ist voreingestellt). Am Ende öffnet sich der Assistent: Server und Token sind schon eingetragen – Vorlagen-Ordner und Druckermodell wählen, „Speichern &amp; starten“.</li>
-          <li>Später ändern: Startmenü → „Druck-Helfer einrichten“. Update: neues Setup drüber installieren. Voraussetzungen: P-touch Editor, b-PAC Client (64 bit) – kein Python nötig.</li>
+          <li>Später ändern: Startmenü → „Druck-Helfer einrichten“. Update: oben per „Helfer aktualisieren“ oder neues Setup drüber installieren. Voraussetzungen: P-touch Editor, b-PAC Client (64 bit) – kein Python nötig.</li>
         </ol>
       </div>
       <p class="hint" id="s-inst-none" hidden>Auf diesem Server liegt kein Windows-Installer (z. B. selbst gebautes Image). Den Helfer gibt es hier als Python-Paket; der Installer ist bei den Versionen auf GitHub als Release-Asset erhältlich.</p>
@@ -532,6 +541,7 @@ async function loadStatus(neu = false) {
   const sig = JSON.stringify([s?.helfer?.modus, s?.helfer?.verbunden, s?.drucker?.angeschlossen, s?.drucker?.bereit]);
   if (sig !== statusSig) { const first = !statusSig; statusSig = sig; if (!first) loadPrintStatus(); else renderPrintStatus(); }
   else renderPrintStatus();
+  checkUpdateProgress();
   if ($("#tab-settings").classList.contains("active") && SET) { renderHelperInfo(); fillPrinterSelect($("#s-printer").value); }
   renderTplSource();
 }
@@ -562,13 +572,20 @@ function renderStatus() {
   const lokal = h.modus !== "helfer";
   let hc, ht;
   if (lokal) { hc = h.bpac === false ? "warn" : "ok"; ht = "lokal (dieser PC)"; }
+  else if (UPD) { hc = "warn"; ht = "Update läuft …"; }
+  else if (h.verbunden && h.update?.verfuegbar) { hc = "warn"; ht = "Update verfügbar"; }
   else if (h.verbunden) { hc = "ok"; ht = "verbunden" + (h.rechner ? ` (${h.rechner})` : ""); }
   else { hc = "err"; ht = "nicht verbunden"; }
   setChip("#st-helfer", hc, `Helfer: ${ht}`, [
     `Helfer: ${ht}`,
     `Modus: ${lokal ? "lokal – b-PAC/P-touch auf dem Rechner, auf dem der Server läuft" : "Helfer – Windows-PC per Druck-Helfer"}`,
     !lokal && h.rechner && `Rechner: ${h.rechner}`, !lokal && h.seit && `Verbunden seit: ${fmtTime(h.seit)}`,
-    h.version && `Version: ${h.version}`, h.bpac !== undefined && `b-PAC: ${h.bpac ? "installiert" : "nicht verfügbar"}`,
+    h.version && `Version: ${h.version}`,
+    !lokal && h.verbunden && h.update?.verfuegbar && `Update: installiert ${h.update.installiert || "?"} → verfügbar ${h.update.angeboten || "?"}`
+      + (h.update.moeglich ? " (Einstellungen → Druck-Helfer → „Helfer aktualisieren“)" : ""),
+    !lokal && h.verbunden && h.update?.verfuegbar && !h.update.moeglich && h.update.grund,
+    UPD && "Update läuft – der Helfer installiert die neue Version und verbindet sich neu.",
+    h.bpac !== undefined && `b-PAC: ${h.bpac ? "installiert" : "nicht verfügbar"}`,
     h.drucker_liste?.length && `Drucker installiert: ${h.drucker_liste.join(", ")}`,
     !lokal && !h.verbunden && "Am Windows-PC den Helfer (helfer.bat) starten.",
     `Geprüft: ${fmtTime(STATUS_AT)}`].filter(Boolean).join("\n"));
@@ -1541,6 +1558,9 @@ function renderHelperInfo() {
   else if (mode === "helfer") {
     rows.push(["Verbindung", h.verbunden ? "✓ verbunden" : "✗ nicht verbunden – Helfer am Windows-PC starten"]);
     if (h.verbunden) rows.push(["Rechner", h.rechner || "–"], ["Verbunden seit", fmtTime(h.seit)], ["Version", h.version || "–"]);
+    const u = h.update;
+    if (u && (h.verbunden || UPD)) rows.push(["Update", u.verfuegbar
+      ? `installiert ${u.installiert || "?"} → verfügbar ${u.angeboten || "?"}` : (u.grund || "–")]);
   }
   if (h?.bpac !== undefined && (mode === "lokal" || h.verbunden)) rows.push(["b-PAC", h.bpac ? "installiert" : "nicht verfügbar"]);
   if (mode === "helfer" && h?.verbunden) {
@@ -1558,6 +1578,77 @@ function renderHelperInfo() {
   }
   rows.push(["Helfer-Token", ht.token_gesetzt ? (ht.token_hinweis || "gesetzt") : "noch keiner – wird beim Herunterladen des Helfers erzeugt"]);
   $("#s-helper-info").innerHTML = rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
+  renderUpdate();
+}
+
+// ---------- Helfer-Update per Knopf: der Server schickt dem Helfer den Auftrag, danach warten wir auf die
+// Neuverbindung mit der neuen Version (Status alle 3 s). UPD = laufendes Update (nur in diesem Browser-Tab).
+const UPD_TIMEOUT_MS = 5 * 60 * 1000;
+let UPD = null, updTimer = null, updSending = false;
+function updMsg(text, cls) { const m = $("#m-upd"); m.className = "msg " + cls; m.textContent = text; }
+function renderUpdate() {
+  const h = STATUS?.helfer, u = h?.update, box = $("#s-upd");
+  const show = !!(h && h.modus === "helfer" && u && (h.verbunden || UPD));
+  box.hidden = !show;
+  if (!show) return;
+  const btn = $("#s-upd-btn");
+  btn.hidden = !UPD && !u.moeglich;
+  btn.disabled = !!UPD || updSending || !u.moeglich;
+  $("#s-upd-hint").hidden = !u.moeglich && !UPD;
+  $("#s-upd-text").textContent = UPD ? "" : u.verfuegbar
+    ? `installiert ${u.installiert || "?"} → verfügbar ${u.angeboten || "?"}`
+    : u.moeglich ? (u.grund || "") : "";
+  // Helfer ohne Installation (Python/ZIP) bzw. kein Setup auf dem Server: Grund als Hinweis
+  if (!UPD && !updSending && !u.moeglich && h.verbunden && (u.verfuegbar || /Installer/.test(u.grund || "")))
+    updMsg(u.grund || "Update per Knopf nicht möglich – bitte den Installer verwenden.", "busy");
+  else if (!UPD && !updSending && u.moeglich && $("#m-upd").classList.contains("busy")) clearMsg("#m-upd");
+}
+$("#s-upd-btn").onclick = async () => {
+  const h = STATUS?.helfer, u = h?.update;
+  if (!h?.verbunden || !u?.moeglich || UPD || updSending) return;
+  const current = !u.verfuegbar && !!u.angeboten && !!u.installiert;
+  const text = (current
+      ? `Der Druck-Helfer${h.rechner ? " auf " + h.rechner : ""} ist bereits aktuell (${u.installiert}).\nTrotzdem neu installieren?`
+      : `Druck-Helfer${h.rechner ? " auf " + h.rechner : ""} aktualisieren`
+        + (u.angeboten ? `: ${u.installiert || "?"} → ${u.angeboten}?` : "? (Version des Setups unbekannt)"))
+    + "\n\nDer Helfer lädt das Setup vom Server und startet es. Am Windows-PC erscheint die Windows-"
+    + "Administratorabfrage (Benutzerkontensteuerung) – dort mit „Ja“ bestätigen.\n"
+    + "Während des Updates (etwa eine Minute) sind Drucken und Vorschau über den Helfer nicht möglich.";
+  if (!confirm(text)) return;
+  updSending = true; renderUpdate();
+  updMsg("Setup wird an den Helfer übertragen … Am Windows-PC die Administratorabfrage mit „Ja“ bestätigen.", "busy");
+  try {
+    const r = await call("POST", "/api/helfer/aktualisieren", {erzwingen: current});
+    UPD = {ziel: r.version || null, von: r.von || u.installiert || null, seit: h.seit, start: Date.now()};
+    updMsg(`Update läuft … Helfer verbindet sich neu${UPD.ziel ? " (Ziel: Version " + UPD.ziel + ")" : ""}.`, "busy");
+    clearInterval(updTimer);
+    updTimer = setInterval(() => loadStatus(), 3000);
+  } catch (e) {
+    updMsg("Update nicht gestartet: " + e.message, "err");
+  }
+  updSending = false;
+  renderStatus(); renderHelperInfo();
+};
+// Nach jedem Status: neue Verbindung (anderes "seit") mit der Zielversion = fertig; sonst nach 5 min Timeout
+function checkUpdateProgress() {
+  if (!UPD) return;
+  const h = STATUS?.helfer;
+  const done = (text, cls) => {
+    clearInterval(updTimer); updTimer = null; UPD = null;
+    updMsg(text, cls);
+    renderStatus();
+  };
+  if (h?.verbunden && h.seit !== UPD.seit) {
+    if (!UPD.ziel || h.version === UPD.ziel) return done(`✓ Helfer aktualisiert und wieder verbunden – Version ${h.version || "?"}.`, "ok");
+    if (h.version !== UPD.von) return done(`Helfer wieder verbunden, meldet aber Version ${h.version || "?"} statt ${UPD.ziel}.`, "err");
+  }
+  if (Date.now() - UPD.start > UPD_TIMEOUT_MS)
+    return done("Nach 5 Minuten hat sich kein Helfer mit der neuen Version gemeldet. Am Windows-PC prüfen: Wurde die "
+      + "Administratorabfrage abgelehnt oder hängt das Setup? Sonst den Helfer über das Startmenü („Labeltool Druck-Helfer“) "
+      + "starten oder den Installer herunterladen und von Hand installieren. Protokoll: %LOCALAPPDATA%\\Labeltool-Helfer\\helfer.log", "err");
+  const secs = Math.round((Date.now() - UPD.start) / 1000);
+  updMsg(`Update läuft … ${h?.verbunden && h.seit === UPD.seit ? "Setup wird gestartet" : "Helfer verbindet sich neu"}`
+    + ` (${secs} s)${UPD.ziel ? " – Ziel: Version " + UPD.ziel : ""}.`, "busy");
 }
 function helperYaml(token) {
   const h = STATUS?.helfer || {}, v = h.vorlagen && typeof h.vorlagen === "object" ? h.vorlagen : {};

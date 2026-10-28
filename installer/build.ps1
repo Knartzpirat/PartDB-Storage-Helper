@@ -6,6 +6,10 @@
   1. PyInstaller (onedir) -> installer\build\bundle\Labeltool-Helfer\
        LabeltoolHelfer.exe (ohne Konsole) + LabeltoolHelferSetup.exe (Assistent) + _internal\
   2. Inno Setup (ISCC) -> installer\dist\Labeltool-Helfer-Setup.exe
+                        + installer\dist\Labeltool-Helfer-Setup.version (nur die Versionsnummer)
+
+  Die Build-Version landet während PyInstaller in labeltool\_version.py; danach wird die Datei
+  wieder auf den Repo-Stand (Vorgabe 0.0.0-dev) zurückgesetzt.
 
   Lokal: .\installer\build.ps1            (Python aus .venv, PyInstaller wird bei Bedarf installiert,
                                            Inno Setup bei Bedarf per winget)
@@ -30,6 +34,8 @@ $Projekt = Split-Path $Installer -Parent
 $Build = Join-Path $Installer "build"
 $Bundle = Join-Path $Build "bundle\Labeltool-Helfer"
 $Dist = Join-Path $Installer "dist"
+$VersionPy = Join-Path $Projekt "labeltool\_version.py"
+$VersionVorgabe = "0.0.0-dev"
 
 function Schritt([string]$Text) { Write-Host "`n==> $Text" -ForegroundColor Cyan }
 
@@ -44,7 +50,7 @@ if (-not $Version) {
     }
 }
 $Version = $Version.Trim() -replace '^v', ''
-if ($Version -notmatch '^\d+\.\d+\.\d+') { throw "Version '$Version' muss mit x.y.z beginnen (z. B. 1.2.3 oder 0.0.0-abc1234)." }
+if ($Version -notmatch '^\d+\.\d+\.\d+[0-9A-Za-z.+_-]*$') { throw "Version '$Version' muss mit x.y.z beginnen (z. B. 1.2.3 oder 0.0.0-abc1234)." }
 $VersionNum = ($Version -split '-')[0]
 Write-Host "Version: $Version (Dateiversion $VersionNum)"
 
@@ -113,13 +119,24 @@ VSVersionInfo(
 
 # ---------------------------------------------------------------- PyInstaller
 Schritt "PyInstaller: Programme bündeln"
+# labeltool\_version.py nur für die Dauer des Bündelns auf die Build-Version setzen (Repo bleibt sauber)
+$Utf8 = [Text.UTF8Encoding]::new($false)
+$VersionPyAlt = if (Test-Path $VersionPy) { [IO.File]::ReadAllBytes($VersionPy) } else { $null }
+if ($VersionPyAlt -and ($Utf8.GetString($VersionPyAlt) -notmatch "VERSION = `"$([regex]::Escape($VersionVorgabe))`"")) {
+    Write-Warning "$VersionPy enthält nicht die Vorgabe $VersionVorgabe (Rest eines abgebrochenen Baus?) - wird danach auf die Vorgabe gesetzt."
+    $VersionPyAlt = $Utf8.GetBytes("# Build-Version – wird beim Bauen ersetzt (installer\build.ps1 vorübergehend, Docker-Build-Arg VERSION im Image).`n# Im Repo bleibt die Vorgabe für den Betrieb aus dem Quellcode.`nVERSION = `"$VersionVorgabe`"`n")
+}
 Push-Location $Projekt
 try {
+    [IO.File]::WriteAllText($VersionPy, "# Von installer\build.ps1 erzeugt.`nVERSION = `"$Version`"`n", $Utf8)
     & $Python -m PyInstaller --noconfirm --clean --log-level WARN `
         --distpath (Join-Path $Build "bundle") --workpath (Join-Path $Build "work") `
         (Join-Path $Installer "helfer.spec")
     if ($LASTEXITCODE -ne 0) { throw "PyInstaller fehlgeschlagen." }
-} finally { Pop-Location }
+} finally {
+    if ($VersionPyAlt) { [IO.File]::WriteAllBytes($VersionPy, $VersionPyAlt) } else { Remove-Item $VersionPy -ErrorAction SilentlyContinue }
+    Pop-Location
+}
 foreach ($exe in @("LabeltoolHelfer.exe", "LabeltoolHelferSetup.exe")) {
     if (-not (Test-Path (Join-Path $Bundle $exe))) { throw "$exe fehlt im Bundle $Bundle" }
 }
@@ -131,4 +148,6 @@ New-Item -ItemType Directory -Force $Dist | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "ISCC fehlgeschlagen (Code $LASTEXITCODE)." }
 
 $setup = Get-Item (Join-Path $Dist "Labeltool-Helfer-Setup.exe")
+# Versionsdatei neben der Setup-Datei (liest der Server: Update-Angebot an den Helfer)
+[IO.File]::WriteAllText((Join-Path $Dist "Labeltool-Helfer-Setup.version"), $Version, [Text.UTF8Encoding]::new($false))
 Schritt ("Fertig: {0} ({1:N1} MB, Version {2})" -f $setup.FullName, ($setup.Length / 1MB), $Version)

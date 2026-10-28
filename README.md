@@ -178,7 +178,6 @@ Einstellungen, Zwischenspeicher und Protokoll (`helfer.log`) liegen in **`%LOCAL
 Später ändern: Startmenü → „Druck-Helfer einrichten“. Nach einem neuen Helfer-Token den Installer erneut
 herunterladen und installieren oder den Token im Assistenten eintragen – Ordner und Modell bleiben erhalten.
 
-**Update:** neues Setup herunterladen und über die bestehende Installation installieren; die Einstellungen bleiben.
 **Deinstallieren:** Windows-Einstellungen → *Apps* → *Installierte Apps* → „Labeltool Druck-Helfer“ (oder
 Startmenü → „Deinstallieren“). Programm, Startmenü-Einträge und Autostart werden entfernt; den Ordner
 `%LOCALAPPDATA%\Labeltool-Helfer\` danach bei Bedarf von Hand löschen.
@@ -196,6 +195,24 @@ autostart: true
 
 Der Helfer baut die Verbindung nach Unterbrechungen selbst wieder auf. Es ist immer nur ein Helfer verbunden; ein neu
 verbundener ersetzt den alten.
+
+#### Helfer aktualisieren
+
+Server-Image und Helfer-Setup haben dieselbe Version (aus dem Git-Tag `v1.2.3` → `1.2.3`; Builds ohne Tag heißen
+`0.0.0-<commit>`). Ist auf dem Server ein neueres Setup als beim verbundenen Helfer, zeigt die Kopfzeile
+**„Helfer: Update verfügbar“** (gelb), unter *Einstellungen → Druck-Helfer* steht „installiert X → verfügbar Y“.
+
+1. **„Helfer aktualisieren“** klicken und bestätigen. Der Helfer lädt das Setup selbst vom Server (mit seinem
+   Helfer-Token), prüft die Prüfsumme und startet es.
+2. **Am Windows-PC** fragt die Benutzerkontensteuerung nach Administratorrechten – mit **„Ja“** bestätigen. Wer die
+   Abfrage ablehnt, behält die alte Version; der Helfer läuft weiter.
+3. Das Setup installiert ohne Rückfragen, übernimmt Einstellungen und Autostart und startet den Helfer neu. Die
+   Oberfläche zeigt „Update läuft … Helfer verbindet sich neu“, bis sich der Helfer mit der neuen Version meldet
+   (nach 5 Minuten ohne Neuverbindung erscheint ein Hinweis, was am PC zu prüfen ist).
+
+Der Knopf funktioniert nur mit dem **installierten** Helfer. Die Python-Variante (ZIP, `helfer.bat`) wird nicht per
+Knopf aktualisiert – dafür einmal den Installer verwenden. Von Hand geht es weiterhin: neues Setup herunterladen und
+über die bestehende Installation installieren; die Einstellungen bleiben.
 
 **Alternative ohne Installation (Python 3.11+ nötig):** *Einstellungen → Druck-Helfer → Alternative ohne
 Installation* lädt `Labeltool-Helfer.zip`. In einen festen Ordner entpacken (z. B. `C:\Labeltool-Helfer`) und

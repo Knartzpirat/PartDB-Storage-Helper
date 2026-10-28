@@ -687,8 +687,16 @@ class HelferKern:
     """
 
     def __init__(self, cfg: HelferConfig, printer=bpac, desktop=None, state_fn=printer_state,
-                 opener=open_file, hostname: str | None = None):
+                 opener=open_file, hostname: str | None = None, installiert: bool | None = None,
+                 starter=None, update_dir: Path | None = None, pro_benutzer=None):
         self.cfg = cfg
+        self.installiert = gepackt() if installiert is None else bool(installiert)
+        self.starter = starter or setup_ausfuehren   # (datei, parameter, erhoeht) – im Test eine Attrappe
+        self.update_dir = Path(update_dir) if update_dir else None
+        self.pro_benutzer = pro_benutzer or installation_pro_benutzer
+        self.konfig_pfad: Path | None = None     # setzt run_forever (für den Neustart nach dem Update)
+        self.update_gestartet = False            # True: Setup läuft -> Helfer beendet sich nach der Antwort
+        self._update_lock = threading.Lock()
         self.printer = printer
         self.desktop = desktop or LocalDesktop(opener=opener)   # verknüpfte Kopien neben der CSV
         self.state_fn = state_fn
@@ -725,7 +733,8 @@ class HelferKern:
             except Exception as e:
                 s = {"angeschlossen": None, "status_text": f"Status nicht lesbar: {e}"}
             states[name] = {"angeschlossen": s.get("angeschlossen"), "status_text": s.get("status_text", "")}
-        return {"protokoll": PROTOKOLL, "rechner": self.hostname, "version": __version__, "bpac": avail,
+        return {"protokoll": PROTOKOLL, "rechner": self.hostname, "version": __version__,
+                "installiert": self.installiert, "bpac": avail,
                 "bpac_grund": "" if avail else (st.get("grund") or "b-PAC nicht verfügbar"),
                 "drucker_liste": names, "drucker": self.printer_name(names), "drucker_status": states,
                 "drucker_modell": self.cfg.drucker_modell or None,
@@ -849,7 +858,7 @@ class HelferKern:
             return {"typ": "antwort", "id": rid, "ok": False, "code": "vorlage_fehlt", "fehler": f"Vorlage {e} fehlt im Cache."}
         except NotReady as e:
             return {"typ": "antwort", "id": rid, "ok": False, "code": "unfertig", "fehler": str(e)}
-        except (bpac.BpacError, TemplateError, PathError, OSError, ValueError, KeyError, TypeError) as e:
+        except (bpac.BpacError, TemplateError, PathError, UpdateFehler, OSError, ValueError, KeyError, TypeError) as e:
             text = str(e) or type(e).__name__
             log.warning("Auftrag %s fehlgeschlagen: %s", typ, text)
             return {"typ": "antwort", "id": rid, "ok": False, "fehler": text}
@@ -938,6 +947,49 @@ class HelferKern:
         data, sha = self._read_stable(path)
         return {"name": path.name, "sha256": sha, "daten": base64.b64encode(data).decode("ascii")}
 
+    def _job_aktualisieren(self, msg: dict) -> dict:
+        """Setup vom Server laden, prüfen und mit Administratorrechten starten (Update per Knopf)."""
+        if not self.installiert:
+            raise UpdateFehler("Dieser Druck-Helfer läuft aus dem Projekt bzw. ZIP-Paket (Python) und kann nicht "
+                               "per Knopf aktualisiert werden – bitte einmalig den Windows-Installer verwenden "
+                               "(Einstellungen > Druck-Helfer > Installer herunterladen).")
+        pfad = str(msg.get("pfad") or "")
+        if not pfad.startswith("/") or pfad.startswith("//") or "://" in pfad or "\\" in pfad:
+            raise UpdateFehler(f"Ungültiger Download-Pfad '{pfad}'.")     # Token nur an den eigenen Server
+        sha = str(msg.get("sha256") or "").strip().lower()
+        if not re.fullmatch(r"[0-9a-f]{64}", sha):
+            raise UpdateFehler("Auftrag ohne gültige Prüfsumme (sha256) – Update abgebrochen.")
+        version = str(msg.get("version") or "").strip()
+        if not self._update_lock.acquire(blocking=False):
+            raise UpdateFehler("Ein Update läuft bereits.")
+        try:
+            if self.update_gestartet:
+                raise UpdateFehler("Das Update wurde bereits gestartet.")
+            url = server_basis(self.cfg.server) + pfad
+            log.info("Update auf Version %s: lade %s …", version or "?", url)
+            datei = setup_laden(url, self.cfg.token, sha, self.update_dir or update_ordner(), version)
+            parameter = UPDATE_PARAMETER
+            pro_benutzer = bool(self.pro_benutzer())
+            if pro_benutzer:
+                parameter += " /CURRENTUSER"        # Installation nur für diesen Benutzer: ohne Admin
+            if self.konfig_pfad is not None and \
+                    Path(self.konfig_pfad).resolve() != standard_konfig(True).resolve():
+                parameter += f' "/KONFIG={Path(self.konfig_pfad).resolve()}"'
+            log.info("Starte Setup %s %s%s", datei, parameter,
+                     "" if pro_benutzer else " (Windows fragt nach Administratorrechten)")
+            try:
+                self.starter(datei, parameter, not pro_benutzer)
+            except OSError as e:
+                if getattr(e, "winerror", None) == ERROR_CANCELLED:
+                    raise UpdateFehler("Die Windows-Administratorabfrage wurde abgelehnt – Update abgebrochen, "
+                                       "der Helfer läuft mit der bisherigen Version weiter.")
+                raise UpdateFehler(f"Setup konnte nicht gestartet werden: {e.strerror or e}")
+            self.update_gestartet = True
+            log.info("Setup gestartet – der Helfer beendet sich und wird nach der Installation neu gestartet.")
+            return {"version": version or None, "datei": str(datei)}
+        finally:
+            self._update_lock.release()
+
     def _job_vorlage_speichern(self, msg: dict) -> dict:
         path = self._template(msg.get("name"))
         data = _b64(msg.get("daten"), path.name)
@@ -962,6 +1014,7 @@ async def _session(ws, kern: HelferKern, cfg: HelferConfig) -> None:
     jobs = ThreadPoolExecutor(1, thread_name_prefix="auftrag")     # b-PAC: Aufträge nacheinander
     files = ThreadPoolExecutor(1, thread_name_prefix="abgleich")   # Dateiarbeit, unabhängig von b-PAC
     probe = ThreadPoolExecutor(1, thread_name_prefix="status")
+    upd = ThreadPoolExecutor(1, thread_name_prefix="update")       # Download + Administratorabfrage
     send_lock = asyncio.Lock()
     sync_now = asyncio.Event()
 
@@ -1012,10 +1065,14 @@ async def _session(ws, kern: HelferKern, cfg: HelferConfig) -> None:
                 pass
 
     async def run_job(msg: dict) -> None:
-        pool = files if msg.get("typ") in FILE_JOBS else jobs
+        typ = msg.get("typ")
+        pool = upd if typ == UPDATE_JOB else files if typ in FILE_JOBS else jobs
         answer = await loop.run_in_executor(pool, kern.handle, msg)
         if answer is not None:
             await send(answer)
+        if typ == UPDATE_JOB and getattr(kern, "update_gestartet", False):
+            await asyncio.sleep(UPDATE_PAUSE)        # Antwort sicher beim Server, dann sauber trennen
+            await ws.close(1000, "Helfer wird aktualisiert")
 
     tasks: set[asyncio.Task] = set()
     background = [asyncio.create_task(status_loop()), asyncio.create_task(manifest_loop())]
@@ -1039,7 +1096,7 @@ async def _session(ws, kern: HelferKern, cfg: HelferConfig) -> None:
         kern.on_change = None
         for t in background + list(tasks):
             t.cancel()
-        for pool in (jobs, files, probe):
+        for pool in (jobs, files, probe, upd):
             pool.shutdown(wait=False, cancel_futures=True)
 
 
@@ -1068,8 +1125,10 @@ def _log_manifest(m: dict, last: dict | None) -> None:
             log.warning("Vorlage %s wird nicht abgeglichen: %s", name, why)
 
 
-async def run_forever(config_path: Path, kern_factory=HelferKern) -> None:
-    """Verbinden, bei Abbruch mit Backoff neu verbinden. Liest helfer.yaml bei jedem Versuch neu."""
+async def run_forever(config_path: Path, kern_factory=HelferKern) -> bool:
+    """Verbinden, bei Abbruch mit Backoff neu verbinden. Liest helfer.yaml bei jedem Versuch neu.
+
+    Endet nur nach einem gestarteten Update (-> True); der Installer startet den Helfer danach neu."""
     try:
         from websockets.asyncio.client import connect
         from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus, InvalidURI
@@ -1086,6 +1145,10 @@ async def run_forever(config_path: Path, kern_factory=HelferKern) -> None:
             await asyncio.sleep(30)
             continue
         kern = kern_factory(cfg)
+        try:
+            kern.konfig_pfad = Path(config_path)
+        except AttributeError:   # pragma: no cover – Attrappen im Test
+            pass
         log.info("Verbinde mit %s …", url)
         connected = False
         close_code = None
@@ -1109,8 +1172,12 @@ async def run_forever(config_path: Path, kern_factory=HelferKern) -> None:
             log.error("Server %s nicht erreichbar: %s", cfg.server, e or type(e).__name__)
         else:
             text = CLOSE_TEXT.get(close_code) or (f"Verbindung getrennt (Code {close_code}{': ' + reason if reason else ''}).")
-            (log.error if close_code in (4401, 4400) else log.warning)(text)
+            if not getattr(kern, "update_gestartet", False):
+                (log.error if close_code in (4401, 4400) else log.warning)(text)
 
+        if getattr(kern, "update_gestartet", False):
+            log.info("Update gestartet – Helfer beendet sich.")
+            return True
         if connected and close_code not in (4401, 4000, 4400):
             backoff = 1.0
         elif close_code == 4401:
@@ -1168,7 +1235,8 @@ async def _laufen(path: Path, instanz: Einzelinstanz) -> bool:
             loop.call_soon_threadsafe(task.cancel)
     threading.Thread(target=waechter, name="ende", daemon=True).start()
     try:
-        await task
+        if await task:
+            return True          # Update gestartet
     except asyncio.CancelledError:
         if not angefordert.is_set():
             raise

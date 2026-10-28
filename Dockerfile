@@ -3,6 +3,9 @@
 # Mit Windows-Installer (GET /api/helfer/installer), Ordner mit Labeltool-Helfer-Setup.exe:
 #         docker build --build-context helfer-installer=installer/dist -t labeltool:latest .
 # Ohne diese Angabe enthält das Image keinen Installer (der Server bietet dann das Python-Paket an).
+# Build-Version (Anzeige, Update-Vergleich mit dem Helfer): --build-arg VERSION=1.2.3 (CI: Tag v1.2.3 -> 1.2.3,
+# sonst 0.0.0-<commit>); ohne Angabe 0.0.0-dev. Der Installer-Ordner enthält neben der Setup-Datei
+# Labeltool-Helfer-Setup.version (schreibt installer/build.ps1).
 
 # leerer Standard – wird per --build-context helfer-installer=<Ordner> ersetzt (CI: Artefakt des Jobs "installer")
 FROM scratch AS helfer-installer
@@ -38,7 +41,14 @@ COPY labeltool/ labeltool/
 COPY helfer.bat helfer-autostart.bat ./
 COPY docker/config.yaml docker/config.yaml
 # Windows-Setup des Druck-Helfers (optional, s. oben) -> /app/helfer-installer/Labeltool-Helfer-Setup.exe
+# (+ Labeltool-Helfer-Setup.version)
 COPY --from=helfer-installer / /app/helfer-installer/
+
+# Build-Version -> labeltool/_version.py (erst hier, damit der Cache davor unabhängig von der Version bleibt)
+ARG VERSION=0.0.0-dev
+RUN case "${VERSION}" in ""|*[!0-9A-Za-z.+_-]*) echo "Ungültige VERSION: '${VERSION}'" >&2; exit 1;; esac \
+ && printf '# Docker-Build-Arg VERSION\nVERSION = "%s"\n' "${VERSION}" > labeltool/_version.py \
+ && python -c "import labeltool; print('Labeltool-Version', labeltool.__version__)"
 
 RUN (getent group "${PGID}" >/dev/null || groupadd -g "${PGID}" labeltool) \
  && useradd -u "${PUID}" -g "${PGID}" -M -d /app -s /usr/sbin/nologin labeltool \

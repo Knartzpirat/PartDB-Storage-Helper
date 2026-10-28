@@ -9,6 +9,12 @@
 ;   Labeltool-Helfer-Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /CURRENTUSER /DIR=C:\tmp\inst /TASKS=""
 ; Einstellungen, Cache und Protokoll liegen in %LOCALAPPDATA%\Labeltool-Helfer\ und bleiben bei
 ; Update und Deinstallation erhalten.
+;
+; Update per Knopf (der Helfer startet das Setup selbst):
+;   Labeltool-Helfer-Setup.exe /SILENT /SUPPRESSMSGBOXES /NORESTART /UPDATE [/CURRENTUSER] ["/KONFIG=<helfer.yaml>"]
+;   /UPDATE: kein Einrichtungs-Assistent, Autostart bleibt wie er ist (Verknüpfung vorhanden oder nicht),
+;   laufender Helfer wird beendet und nach der Installation als angemeldeter Benutzer neu gestartet
+;   (auch im Silent-Modus). /KONFIG nur bei einer abweichenden helfer.yaml.
 
 #ifndef Version
   #define Version "0.0.0-dev"
@@ -26,7 +32,11 @@
 #define AppName "Labeltool Druck-Helfer"
 #define HelferExe "LabeltoolHelfer.exe"
 #define SetupExe "LabeltoolHelferSetup.exe"
-#define AutostartLnk "Labeltool Druck-Helfer.lnk"
+; [Icons] hängt ".lnk" selbst an – dort AutostartName verwenden, für Dateioperationen AutostartLnk
+#define AutostartName "Labeltool Druck-Helfer"
+#define AutostartLnk AutostartName + ".lnk"
+; ältere Setups legten die Verknüpfung versehentlich als "….lnk.lnk" an
+#define AutostartAlt AutostartLnk + ".lnk"
 
 [Setup]
 ; AppId nie ändern – daran erkennt Windows Updates derselben Anwendung
@@ -90,10 +100,13 @@ Source: "{#Bundle}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs cre
 Name: "{group}\{cm:EintragHelfer}"; Filename: "{app}\{#HelferExe}"; WorkingDir: "{app}"; Comment: "Druck-Helfer starten (läuft im Hintergrund)"
 Name: "{group}\{cm:EintragEinrichten}"; Filename: "{app}\{#SetupExe}"; WorkingDir: "{app}"; Comment: "Server, Token, Vorlagen-Ordner und Drucker einstellen"
 Name: "{group}\{cm:EintragDeinstallieren}"; Filename: "{uninstallexe}"; Comment: "Labeltool Druck-Helfer entfernen"
-Name: "{userstartup}\{#AutostartLnk}"; Filename: "{app}\{#HelferExe}"; WorkingDir: "{app}"; Comment: "Labeltool Druck-Helfer"; Tasks: autostart
+; Autostart: bei normaler Installation laut Aufgabe, bei /UPDATE nur, wenn die Verknüpfung schon da ist
+Name: "{userstartup}\{#AutostartName}"; Filename: "{app}\{#HelferExe}"; WorkingDir: "{app}"; Comment: "Labeltool Druck-Helfer"; Check: AutostartAnlegen
 
 [Run]
-Filename: "{app}\{#SetupExe}"; Parameters: "{code:AssistentParameter}"; WorkingDir: "{app}"; Description: "{cm:AssistentStarten}"; Flags: postinstall nowait skipifsilent runasoriginaluser
+Filename: "{app}\{#SetupExe}"; Parameters: "{code:AssistentParameter}"; WorkingDir: "{app}"; Description: "{cm:AssistentStarten}"; Flags: postinstall nowait skipifsilent runasoriginaluser; Check: not IstUpdate
+; /UPDATE: Helfer als angemeldeter Benutzer wieder starten (kein postinstall -> auch bei /SILENT und /VERYSILENT)
+Filename: "{app}\{#HelferExe}"; Parameters: "{code:HelferParameter}"; WorkingDir: "{app}"; Flags: nowait runasoriginaluser; Check: IstUpdate
 
 [UninstallRun]
 Filename: "{app}\{#HelferExe}"; Parameters: "--beenden"; Flags: runhidden waituntilterminated; RunOnceId: "HelferBeenden"
@@ -101,10 +114,61 @@ Filename: "{app}\{#HelferExe}"; Parameters: "--beenden"; Flags: runhidden waitun
 [UninstallDelete]
 ; Autostart-Verknüpfung – auch wenn der Assistent sie angelegt hat
 Type: files; Name: "{userstartup}\{#AutostartLnk}"
+Type: files; Name: "{userstartup}\{#AutostartAlt}"
 Type: filesandordirs; Name: "{app}\_internal"
 Type: dirifempty; Name: "{app}"
 
 [Code]
+var
+  { Autostart vor der Installation (auch unter dem alten Namen "….lnk.lnk") – vor jeder Änderung gemerkt }
+  HatteAutostart: Boolean;
+
+function InitializeSetup(): Boolean;
+begin
+  HatteAutostart := FileExists(ExpandConstant('{userstartup}\{#AutostartLnk}')) or
+                    FileExists(ExpandConstant('{userstartup}\{#AutostartAlt}'));
+  Result := True;
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  { alte Verknüpfung mit doppelter Endung entfernen – die neue heißt richtig }
+  if CurStep = ssPostInstall then
+    DeleteFile(ExpandConstant('{userstartup}\{#AutostartAlt}'));
+end;
+
+{ /UPDATE auf der Kommandozeile (Update per Knopf aus dem Helfer) }
+function IstUpdate(): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), '/UPDATE') = 0 then
+      Result := True;
+end;
+
+{ abweichende helfer.yaml des laufenden Helfers ("/KONFIG=<Pfad>"), sonst leer = Standard }
+function KonfigPfad(): String;
+begin
+  Result := ExpandConstant('{param:KONFIG|}');
+end;
+
+function HelferParameter(Param: String): String;
+begin
+  Result := '';
+  if KonfigPfad() <> '' then
+    Result := '"' + KonfigPfad() + '"';
+end;
+
+function AutostartAnlegen(): Boolean;
+begin
+  if IstUpdate() then
+    Result := HatteAutostart
+  else
+    Result := WizardIsTaskSelected('autostart');
+end;
+
 function AssistentParameter(Param: String): String;
 var
   Vorgabe: String;
@@ -122,15 +186,18 @@ end;
 
 procedure HelferBeenden();
 var
-  Exe: String;
+  Exe, Args: String;
   Code: Integer;
 begin
   Exe := ExpandConstant('{app}\{#HelferExe}');
+  Args := '--beenden';
+  if KonfigPfad() <> '' then
+    Args := Args + ' "' + KonfigPfad() + '"';
   if FileExists(Exe) then
   begin
     { als angemeldeter Benutzer: dessen helfer.yaml/Sitzung; was übrig bleibt, beendet CloseApplications }
-    if not ExecAsOriginalUser(Exe, '--beenden', '', SW_HIDE, ewWaitUntilTerminated, Code) then
-      Exec(Exe, '--beenden', '', SW_HIDE, ewWaitUntilTerminated, Code);
+    if not ExecAsOriginalUser(Exe, Args, '', SW_HIDE, ewWaitUntilTerminated, Code) then
+      Exec(Exe, Args, '', SW_HIDE, ewWaitUntilTerminated, Code);
   end;
 end;
 

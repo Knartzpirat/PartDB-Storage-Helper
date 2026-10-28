@@ -169,7 +169,7 @@ def test_status_hallo_und_push(tmp_path):
         s = status(c)
         assert s["helfer"] == {"modus": "helfer", "verbunden": True, "rechner": "WERKSTATT-PC", "seit": s["helfer"]["seit"],
                                "version": s["helfer"]["version"], "bpac": True, "drucker_liste": [DRUCKER],
-                               "drucker_modell": None,
+                               "drucker_modell": None, "update": s["helfer"]["update"],
                                "vorlagen": {"ordner": None, "anzahl": 7, "abgeglichen": None, "fehler": None,
                                             "hinweis": helfer_server.NO_FOLDER, "ausstehend": []}}
         assert s["helfer"]["seit"] and s["drucker"] == {"name": DRUCKER, "angeschlossen": True,

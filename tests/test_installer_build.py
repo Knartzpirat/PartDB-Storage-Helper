@@ -295,17 +295,50 @@ def test_iss_startmenue_autostart_und_assistent():
         assert text in t
     task = re.search(r'^Name: "autostart";.*$', t, re.M).group(0)
     assert "unchecked" not in task                                # Autostart standardmäßig an
-    assert re.search(r'^Name: "\{userstartup\}\\\{#AutostartLnk\}".*Tasks: autostart$', t, re.M)
-    assert '#define AutostartLnk "Labeltool Druck-Helfer.lnk"' in t and hs.AUTOSTART_NAME == "Labeltool Druck-Helfer.lnk"
+    # [Icons] hängt ".lnk" selbst an -> dort der Name ohne Endung (sonst entsteht "….lnk.lnk")
+    assert re.search(r'^Name: "\{userstartup\}\\\{#AutostartName\}".*Check: AutostartAnlegen$', t, re.M)
+    assert not re.search(r'^Name: "\{userstartup\}\\\{#AutostartLnk\}"', t, re.M)
+    assert "WizardIsTaskSelected('autostart')" in t
+    assert '#define AutostartName "Labeltool Druck-Helfer"' in t and '#define AutostartLnk AutostartName + ".lnk"' in t
+    assert hs.AUTOSTART_NAME == "Labeltool Druck-Helfer.lnk"                 # gleicher Dateiname wie im Setup
     assert re.search(r'^Type: files; Name: "\{userstartup\}\\\{#AutostartLnk\}"', t, re.M)   # Deinstallation
+    assert re.search(r'^Type: files; Name: "\{userstartup\}\\\{#AutostartAlt\}"', t, re.M)   # alter Doppelname
     run = re.search(r"^\[Run\]\n(.*)$", t, re.M).group(1)
     assert "{#SetupExe}" in run and "postinstall" in run and "runasoriginaluser" in run and "skipifsilent" in run
+    assert run.endswith("Check: not IstUpdate")                   # /UPDATE: kein Assistent
     assert r"ExpandConstant('{src}\helfer.vorgabe.yaml')" in t and "'--nach-installation --autostart '" in t
     assert re.search(r'^Filename: "\{app\}\\\{#HelferExe\}"; Parameters: "--beenden"', t, re.M)
     assert "function PrepareToInstall" in t and "ExecAsOriginalUser" in t and "CloseApplications=force" in t
     assert "{localappdata}\\Labeltool-Helfer" in t                # Hinweis: Benutzerdaten bleiben
     assert '#define HelferExe "LabeltoolHelfer.exe"' in t and helfer.EXE_HELFER == "LabeltoolHelfer.exe"
     assert '#define SetupExe "LabeltoolHelferSetup.exe"' in t and helfer.EXE_SETUP == "LabeltoolHelferSetup.exe"
+
+
+def test_iss_update_parameter():
+    """/UPDATE (Update per Knopf): kein Assistent, Autostart unverändert, Helfer danach neu starten."""
+    t = iss()
+    assert "function IstUpdate(): Boolean;" in t and "CompareText(ParamStr(I), '/UPDATE') = 0" in t
+    neustart = re.search(r'^Filename: "\{app\}\\\{#HelferExe\}"; Parameters: "\{code:HelferParameter\}".*$', t, re.M)
+    assert neustart, "Neustart des Helfers fehlt in [Run]"
+    zeile = neustart.group(0)
+    assert "runasoriginaluser" in zeile and "nowait" in zeile and zeile.endswith("Check: IstUpdate")
+    assert "postinstall" not in zeile and "skipifsilent" not in zeile          # auch bei /SILENT
+    # Autostart beim Update: nur, wenn die Verknüpfung schon da ist (Assistent kann sie abgeschaltet haben)
+    auto = re.search(r"function AutostartAnlegen\(\): Boolean;.*?^end;", t, re.M | re.S).group(0)
+    assert "IstUpdate()" in auto and "HatteAutostart" in auto
+    # Zustand vor jeder Änderung gemerkt – auch unter dem alten Namen "….lnk.lnk"
+    assert "{#AutostartAlt}" in t and "function InitializeSetup" in t and "ssPostInstall" in t
+    assert "{param:KONFIG|}" in t                                             # abweichende helfer.yaml
+    # Parameter, mit denen der Helfer das Setup startet
+    assert helfer.UPDATE_PARAMETER.split() == ["/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/UPDATE"]
+    assert re.search(r"^AppId=\{" + re.escape(helfer.APP_ID) + "$", t, re.M)    # Registry-Schlüssel im Helfer
+
+
+def test_version_vorgabe_im_repo():
+    from labeltool import _version, __version__
+    assert _version.VERSION == "0.0.0-dev" == __version__                       # nie die Build-Version einchecken
+    text = (ROOT / "labeltool" / "_version.py").read_text(encoding="utf-8")
+    assert re.search(r'^VERSION = "0\.0\.0-dev"$', text, re.M)
 
 
 def test_pyinstaller_spec_und_build_skript():
@@ -320,26 +353,39 @@ def test_pyinstaller_spec_und_build_skript():
     ps = (INSTALLER / "build.ps1").read_text(encoding="utf-8")
     assert '"Labeltool-Helfer-Setup.exe"' in ps and "/DVersion=$Version" in ps and "JRSoftware.InnoSetup" in ps
     assert "helfer.spec" in ps and "labeltool-helfer.iss" in ps
+    # Build-Version: _version.py nur während PyInstaller, danach Repo-Stand; Versionsdatei neben dem Setup
+    schreiben, bundeln = ps.index("WriteAllText($VersionPy"), ps.index("-m PyInstaller --noconfirm")
+    zurueck = ps.index("WriteAllBytes($VersionPy, $VersionPyAlt)")
+    assert schreiben < bundeln < zurueck and "finally" in ps[bundeln:zurueck]
+    assert '"Labeltool-Helfer-Setup.version"' in ps and 'labeltool\\_version.py' in ps
 
 
 # ------------------------------------------------------------------ CI und Docker
 def test_workflow_struktur():
     wf = yaml.safe_load((ROOT / ".github" / "workflows" / "docker.yml").read_text(encoding="utf-8"))
     jobs = wf["jobs"]
-    inst, image = jobs["installer"], jobs["image"]
-    assert inst["runs-on"] == "windows-latest" and set(image["needs"]) == {"test", "installer"}
+    inst, image, ver = jobs["installer"], jobs["image"], jobs["version"]
+    assert inst["runs-on"] == "windows-latest" and set(image["needs"]) == {"version", "test", "installer"}
+    # eine Version für beide Jobs (Job-Output)
+    assert ver["outputs"]["version"] == "${{ steps.version.outputs.version }}"
+    vrun = next(s for s in ver["steps"] if s.get("id") == "version")["run"]
+    assert "0.0.0-" in vrun and "GITHUB_OUTPUT" in vrun
+    assert inst["needs"] == ["version"]
     schritte = {s.get("name") or s.get("uses"): s for s in inst["steps"]}
     assert "build.ps1" in schritte["Installer bauen"]["run"]
+    assert '-Version "${{ needs.version.outputs.version }}"' in schritte["Installer bauen"]["run"]
     upload = next(s for s in inst["steps"] if str(s.get("uses", "")).startswith("actions/upload-artifact"))
-    assert upload["with"]["path"] == "installer/dist/Labeltool-Helfer-Setup.exe"
+    assert upload["with"]["path"].split() == ["installer/dist/Labeltool-Helfer-Setup.exe",
+                                              "installer/dist/Labeltool-Helfer-Setup.version"]
     release = schritte["Release-Asset (nur Tags)"]
-    assert "refs/tags/v" in release["if"] and release["with"]["files"] == upload["with"]["path"]
+    assert "refs/tags/v" in release["if"] and release["with"]["files"] == "installer/dist/Labeltool-Helfer-Setup.exe"
+    assert "needs.version.outputs.version" in schritte["Gepacktes Programm prüfen"]["run"]
     assert inst["permissions"]["contents"] == "write"
     download = next(s for s in image["steps"] if str(s.get("uses", "")).startswith("actions/download-artifact"))
     assert download["with"]["name"] == upload["with"]["name"]
     build = next(s for s in image["steps"] if str(s.get("uses", "")).startswith("docker/build-push-action"))
     assert f"helfer-installer={download['with']['path']}" in build["with"]["build-contexts"]
-    assert "0.0.0-" in schritte["Version bestimmen"]["run"]
+    assert build["with"]["build-args"].strip() == "VERSION=${{ needs.version.outputs.version }}"
 
 
 def test_dockerfile_installer_optional():
@@ -350,3 +396,7 @@ def test_dockerfile_installer_optional():
     assert df.index("FROM scratch AS helfer-installer") < df.index("FROM python")
     ignore = (ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
     assert "installer/" in ignore
+    # Build-Version: ARG mit Vorgabe (lokales "docker build ." ohne Arg) -> labeltool/_version.py im Image
+    assert re.search(r"^ARG VERSION=0\.0\.0-dev$", df, re.M)
+    assert df.index("COPY labeltool/ labeltool/") < df.index("ARG VERSION") < df.index("\"${VERSION}\" > labeltool/_version.py")
+    assert df.index("\"${VERSION}\" > labeltool/_version.py") < df.index("USER ${PUID}")

@@ -99,8 +99,9 @@ def _importe(path: Path) -> tuple[set[str], set[str]]:
 
 
 def helfer_module(paket_dir: Path = PAKET_DIR, start=START_MODULE) -> list[str]:
-    """Alle labeltool-Module, die die Startmodule (transitiv) brauchen, plus __init__."""
-    todo, fertig = list(start), set()
+    """Alle labeltool-Module, die die Startmodule (transitiv) brauchen, plus __init__ samt dessen
+    Importen (_version.py – sonst meldet der Python-Helfer immer 0.0.0-dev)."""
+    todo, fertig = list(start) + ["__init__"], set()
     while todo:
         name = todo.pop()
         if name in fertig or name == "__version__":
@@ -111,7 +112,7 @@ def helfer_module(paket_dir: Path = PAKET_DIR, start=START_MODULE) -> list[str]:
         fertig.add(name)
         eigene, _ = _importe(path)
         todo += sorted(eigene - fertig)
-    return sorted(fertig | {"__init__"})
+    return sorted(fertig)
 
 
 def fremde_pakete(paket_dir: Path = PAKET_DIR, module=None) -> set[str]:
@@ -283,8 +284,10 @@ neu herunterladen und erneut installieren – oder den Token im Assistenten eint
 
 Update
 ------
-Neues Setup herunterladen und einfach über die bestehende Installation
-installieren. Die Einstellungen bleiben erhalten.
+Im Labeltool unter Einstellungen > Druck-Helfer "Helfer aktualisieren" klicken
+und am PC die Administratorabfrage mit "Ja" bestätigen. Oder von Hand: neues
+Setup herunterladen und über die bestehende Installation installieren. Die
+Einstellungen bleiben erhalten.
 
 Deinstallieren
 --------------
