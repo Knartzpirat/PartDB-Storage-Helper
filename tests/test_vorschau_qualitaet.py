@@ -159,3 +159,13 @@ def test_schnittoptionen_je_modell():
     # unbekannte Modelle bleiben unangetastet; ähnliche Namen nicht verwechseln
     assert bpac.flags_for_printer(ac | end, "Brother PT-P750W") == ac | end
     assert bpac.supported_cuts("Brother PT-P7000") is None and bpac.supported_cuts("") is None
+
+
+def test_falsches_band_bricht_ab():
+    # eingelegt 12 mm (259), Vorlage braucht 24 mm (261) -> Abbruch mit Meldung
+    import pytest
+    with pytest.raises(bpac.BpacError, match="Falsches Band.*12 mm.*24 mm"):
+        bpac.check_media((259, "12 mm"), {"Layout_Lagerbox_PartDB.lbx": (261, "24 mm")})
+    bpac.check_media((259, "12 mm"), {"a.lbx": (259, "12 mm"), "b.lbx": (259, "12 mm")})   # passt
+    bpac.check_media((0, ""), {"a.lbx": (261, "24 mm")})                                    # unbekannt: kein Abbruch
+

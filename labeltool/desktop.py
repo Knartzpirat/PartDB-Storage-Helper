@@ -210,11 +210,35 @@ def _win32_state(name: str) -> dict | None:
 
 def _bpac_online(name: str) -> bool | None:
     """b-PAC Printer.IsPrinterOnline(name) im b-PAC-Thread; None, wenn b-PAC fehlt oder belegt ist."""
+    return _bpac_info(name)[0]
+
+
+def _bpac_info(name: str) -> tuple[bool | None, str | None]:
+    """(online, eingelegtes Band wie "12 mm") über b-PAC; (None, None), wenn b-PAC fehlt oder belegt ist."""
     from . import bpac
     try:
-        return bpac.run_com(_bpac_online_now, name, timeout=3)
+        return bpac.run_com(_bpac_info_now, name, timeout=8)   # erster Aufruf startet b-PAC (~2–4 s)
     except Exception:   # Timeout: b-PAC druckt/rendert gerade – dann zählt der Windows-Status
-        return None
+        return None, None
+
+
+def _bpac_info_now(name: str) -> tuple[bool | None, str | None]:
+    from . import bpac
+    online = _bpac_online_now(name)
+    if not online:
+        return online, None
+    try:
+        client = bpac._com()
+        if not bpac._lock.acquire(timeout=2):
+            return online, None
+        try:
+            bpac.com_init()
+            mid, mname = bpac._media(client.Dispatch("bpac.Document").Printer)
+            return online, (mname or None) if mid else None
+        finally:
+            bpac._lock.release()
+    except Exception:
+        return online, None
 
 
 def _bpac_online_now(name: str) -> bool | None:
@@ -252,7 +276,7 @@ def printer_state(name: str | None) -> dict:
     if win.get("text") == "nicht installiert":
         return {"name": name, "angeschlossen": False, "bereit": False,
                 "status_text": f"Drucker '{name}' ist unter Windows nicht installiert"}
-    online = _bpac_online(name)
+    online, band = _bpac_info(name)
     if online is None:
         online = win["online"]
     if not online:
@@ -264,7 +288,7 @@ def printer_state(name: str | None) -> dict:
     if win["auftraege"]:
         text += f", {win['auftraege']} Auftrag/Aufträge in der Warteschlange"
     return {"name": name, "angeschlossen": bool(online), "status_text": text,
-            "bereit": bool(online) and not win["fehler"]}
+            "bereit": bool(online) and not win["fehler"], "band": band if online else None}
 
 
 def default_printer(names: list[str]) -> str | None:

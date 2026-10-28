@@ -385,3 +385,13 @@ def test_print_batch_ein_auftrag_fuer_mehrere_vorlagen(fake_com, tmp_path):
     assert names.index("StartPrint") < names.index("PrintOut") and names[-2:] == ["EndPrint", "Close"]
     gedruckt = [c[1][0] for c in calls if isinstance(c, tuple) and c[0] == "PrintOut"]
     assert gedruckt == ["MIC-2.0021", "B-1", "B-2"]
+
+
+def test_print_batch_falsches_band_druckt_nicht(fake_com, monkeypatch):
+    """Box-Label (24 mm) bei eingelegtem 12-mm-Band: Abbruch vor StartPrint."""
+    monkeypatch.setattr(bpac, "_media",
+                        lambda obj: (259, "12 mm") if isinstance(obj, FakePrinter) else (261, "24 mm"))
+    with pytest.raises(bpac.BpacError, match="Falsches Band eingelegt: 12 mm.*24 mm"):
+        bpac.print_batch([(BOX, [BOX_ROW])], "Brother PT-P710BT", 0x1)
+    calls = fake_com[-1].calls
+    assert not any(isinstance(c, tuple) and c[0] == "StartPrint" for c in calls) and calls[-1] == "Close"

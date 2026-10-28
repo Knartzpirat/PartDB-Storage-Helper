@@ -173,7 +173,7 @@ def test_status_hallo_und_push(tmp_path):
                                "vorlagen": {"ordner": None, "anzahl": 7, "abgeglichen": None, "fehler": None,
                                             "hinweis": helfer_server.NO_FOLDER, "ausstehend": []}}
         assert s["helfer"]["seit"] and s["drucker"] == {"name": DRUCKER, "angeschlossen": True,
-                                                        "status_text": "bereit", "bereit": True}
+                                                        "status_text": "bereit", "bereit": True, "band": None}
         ps = c.get("/api/print-status").json()
         assert ps["ok"] is True and ps["aktiv"] is True and ps["drucker"] == [DRUCKER]
         assert c.get("/api/meta").json()["bpac_vorschau"] is True
@@ -203,7 +203,7 @@ def test_status_lokal(tmp_path, monkeypatch):
     s = status(c)
     assert s["helfer"]["modus"] == "lokal" and s["helfer"]["verbunden"] is True and s["helfer"]["bpac"] is True
     assert s["helfer"]["drucker_liste"] == [DRUCKER] and s["helfer"]["rechner"]
-    assert s["drucker"] == {"name": DRUCKER, "angeschlossen": True, "status_text": "bereit", "bereit": True}
+    assert s["drucker"] == {"name": DRUCKER, "angeschlossen": True, "status_text": "bereit", "bereit": True, "band": None}
     hooks = c.app.state.hooks
     assert callable(hooks["helper_status"]) and callable(hooks.on_helper_token_changed)
 
@@ -395,7 +395,7 @@ def test_kern_fehlerfaelle(tmp_path):
     assert r["ok"] is False and "NICHT gesendet" in r["fehler"] and prn.jobs == []
     assert kern.handle({"typ": "gibtsnicht", "id": "5"})["ok"] is False
     info = kern.info()
-    assert info["drucker_status"] == {DRUCKER: {"angeschlossen": False, "status_text": "nicht verbunden oder ausgeschaltet"}}
+    assert info["drucker_status"] == {DRUCKER: {"angeschlossen": False, "status_text": "nicht verbunden oder ausgeschaltet", "band": None}}
 
 
 def test_lokaler_drucker_offline_druckt_nicht():
@@ -443,3 +443,17 @@ def test_sammeldruck_alter_helfer_einzeln(tmp_path):
     with connected(c, kern):
         assert c.post("/api/content-labels/nachdruck", json={"ids": [203, 250], "direkt": True}).status_code == 200
     assert sorted(j[0] for j in prn.jobs) == ["PartDB_3U-3.lbx", "PartDB_Window-Div-Bin-2.lbx"]
+
+
+def test_falsches_band_lehnt_server_ab(tmp_path):
+    """Helfer meldet 12-mm-Band, Box-Label braucht 24 mm -> 409, kein Druckauftrag an den Helfer."""
+    zwoelf = lambda name: {"name": name, "angeschlossen": True, "status_text": "bereit", "bereit": True, "band": "12 mm"}
+    c, cfg, kern, prn, opened = setup(tmp_path, state_fn=zwoelf)
+    with connected(c, kern):
+        assert c.get("/api/status?neu=1").json()["drucker"]["band"] == "12 mm"
+        c.post("/api/boxes", json={"abbr": "MIC", "compartments": 2, "box_type": "WinBin2", "count": 1})
+        r = c.post("/api/name-labels/print")
+        assert r.status_code == 409 and "Falsches Band eingelegt: 12 mm" in r.json()["detail"] and "24 mm" in r.json()["detail"]
+        # 12-mm-Bauteil-Labels passen dagegen
+        assert c.post("/api/content-labels/nachdruck", json={"ids": [203], "direkt": True}).status_code == 200
+    assert [j[0] for j in prn.jobs] == ["PartDB_Window-Div-Bin-2.lbx"]

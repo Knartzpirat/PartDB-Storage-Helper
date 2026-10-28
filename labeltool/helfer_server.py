@@ -831,7 +831,8 @@ class HelperHub:
                            "update": update_status(info)},
                 "drucker": {"name": name, "angeschlossen": state.get("angeschlossen"), "status_text": text,
                             "bereit": bool(getattr(self.cfg, "direct_print", False) and st["ok"]
-                                           and state.get("angeschlossen") is True)}}
+                                           and state.get("angeschlossen") is True),
+                            "band": state.get("band") if state.get("angeschlossen") else None}}
 
 
 # ------------------------------------------------------------------ Drucker/Desktop über den Helfer
@@ -1098,7 +1099,8 @@ class StatusProvider:
                            "drucker_modell": None, "update": update_status(None, "lokal")},
                 "drucker": {"name": name or None, "angeschlossen": state.get("angeschlossen"), "status_text": text,
                             "bereit": bool(getattr(self.cfg, "direct_print", False) and st.get("ok")
-                                           and state.get("angeschlossen") is True)}}
+                                           and state.get("angeschlossen") is True),
+                            "band": state.get("band") if state.get("angeschlossen") else None}}
 
 
 class Hooks(dict):

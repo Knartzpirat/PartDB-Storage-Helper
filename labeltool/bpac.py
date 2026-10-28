@@ -344,6 +344,26 @@ def _renderable(template: Path):
             yield copy
 
 
+def _media(obj) -> tuple[int, str]:
+    """(Media-ID, Name) – vom Drucker (eingelegtes Band) oder von der geöffneten Vorlage. 0 = unbekannt."""
+    try:
+        return int(_call(obj, "GetMediaId") or 0), str(_call(obj, "GetMediaName") or "").strip()
+    except Exception:
+        return 0, ""
+
+
+def check_media(loaded: tuple[int, str], needed: dict[str, tuple[int, str]]) -> None:
+    """Falsches Band -> BpacError, bevor etwas gedruckt wird. Unbekanntes Band (0) wird nicht geprüft."""
+    lid, lname = loaded
+    if not lid:
+        return
+    wrong = {t: m for t, m in needed.items() if m[0] and m[0] != lid}
+    if wrong:
+        brauchen = ", ".join(sorted({m[1] or str(m[0]) for m in wrong.values()}))
+        raise BpacError(f"Falsches Band eingelegt: {lname or lid} – die Vorlage ({', '.join(sorted(wrong))}) "
+                        f"braucht {brauchen}. Bitte Band wechseln, es wurde nichts gedruckt.")
+
+
 @on_com_thread
 def print_labels(template: Path, rows: list[dict], printer: str, flags: int) -> int:
     """Druckt ein Label je Zeile mit der Originalvorlage (wird nicht gespeichert)."""
@@ -371,7 +391,7 @@ def print_batch(jobs: list[tuple[Path, list[dict]]], printer: str, flags: int) -
         com_init()
         doc = _dispatch(client)
         # 1) Alle Vorlagen prüfen (Objektabgleich) und Drucker bestimmen – noch ohne Druckauftrag
-        prepared, name = [], printer
+        prepared, name, needed = [], printer, {}
         for template, rows in jobs:
             source = stack.enter_context(_renderable(template))
             fields = merge_fields(source)
@@ -389,10 +409,12 @@ def print_batch(jobs: list[tuple[Path, list[dict]]], printer: str, flags: int) -
                         name = str(_call(doc, "GetPrinterName") or "")
                     except Exception:
                         name = ""
+                needed[template.name] = _media(doc)
             finally:
                 _close(doc)
             prepared.append((source, fields, mapping, rows))
         flags = flags_for_printer(flags, name)
+        check_media(_media(doc.Printer), needed)      # falsches Band -> abbrechen, nichts senden
 
         # 2) EIN Auftrag für alle Labels aller Vorlagen
         if not doc.StartPrint("", flags):

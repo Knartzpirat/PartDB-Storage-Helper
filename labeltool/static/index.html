@@ -598,8 +598,10 @@ function renderStatus() {
   else if (d.angeschlossen === false) { dc = "err"; dt = "nicht verbunden"; }
   else if (d.angeschlossen === true) { dc = "warn"; dt = "nicht bereit"; }
   else { dc = ""; dt = "unbekannt"; }
-  setChip("#st-drucker", dc, `Drucker: ${dt}`, [
+  const band = d.band && !helperMissing() ? ` · ${d.band}` : "";
+  setChip("#st-drucker", dc, `Drucker: ${dt}${band}`, [
     `Drucker: ${dt}`, `Name: ${d.name || "(aus der Vorlage)"}`, d.status_text && `Status: ${d.status_text}`,
+    d.band && `Eingelegtes Band: ${d.band}`,
     `Angeschlossen: ${yesNo(d.angeschlossen)}`, d.bereit !== undefined && `Direktdruck möglich: ${yesNo(d.bereit)}`,
     helperMissing() && "Ohne verbundenen Helfer nicht prüfbar.", PRINT.aktiv === false && "Direktdruck ist ausgeschaltet.",
     `Geprüft: ${fmtTime(STATUS_AT)}`].filter(Boolean).join("\n"));

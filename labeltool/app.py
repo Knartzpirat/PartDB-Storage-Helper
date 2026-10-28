@@ -58,9 +58,24 @@ class BoxTypeIn(BaseModel):
     lbx: str = ""
 
 
-class Reprint(BaseModel):
+class PrintOptions(BaseModel):
+    kopien: int = Field(default=1, ge=1, le=50)     # Exemplare je Label (direkt hintereinander, ein Auftrag)
+    band_gewechselt: bool = False                    # Nutzer hat den Rollenwechsel bestätigt
+
+
+class Reprint(PrintOptions):
     ids: list[int] = Field(min_length=1, max_length=200)   # Lagerort-IDs der Boxen
     direkt: bool = False                                    # True = Direktdruck, sonst CSV schreiben
+
+
+class PrintCheck(BaseModel):
+    art: str                                # "box" | "bauteile" | "nachdruck"
+    ids: list[int] = []                     # nur für "nachdruck"
+
+
+def copies(rows: list[dict], n: int) -> list[dict]:
+    """Jede Zeile n-mal direkt hintereinander – im selben Druckauftrag (Autocut dazwischen)."""
+    return [r for r in rows for _ in range(max(1, n))]
 
 
 class OpenTemplate(BaseModel):
@@ -258,6 +273,43 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
         return str(desktop.open_linked(cfg.template_dir / lbx, csv_path))
 
     # ------------------------------------------------------------- Direktdruck (b-PAC, optional)
+    def tape_info(templates) -> dict:
+        """Band der Vorlagen und eingelegtes Band. passt: True/False, None = eingelegtes Band unbekannt."""
+        needed: dict[float, list[str]] = {}
+        for t in dict.fromkeys(templates):
+            try:
+                tape = lbx_mod.parse(cfg.template_dir / t).tape_mm
+            except Exception:
+                tape = None
+            needed.setdefault(tape, []).append(t)
+        band = None
+        if isinstance(printer, helfer_server.ModePrinter):
+            try:
+                band = (app.state.hooks.helper_status().get("drucker") or {}).get("band")
+            except Exception:
+                band = None
+        try:
+            loaded = float(str(band).split()[0].replace(",", ".")) if band else None
+        except ValueError:
+            loaded = None
+        known = [t for t in needed if t]
+        passt = None if loaded is None or not known else all(abs(t - loaded) <= 0.5 for t in known)
+        return {"baender": [{"band_mm": t, "vorlagen": v} for t, v in needed.items()],
+                "eingelegt": band, "eingelegt_mm": loaded, "passt": passt}
+
+    def check_tape(templates) -> None:
+        """Eingelegtes Band (vom Status des Helfers bzw. lokal) mit den Vorlagen vergleichen – bei
+        Abweichung 409, bevor der Auftrag zum Drucker geht. Unbekanntes Band: nicht prüfen.
+        Nur für den echten Drucker (lokal/Helfer) – nicht für übergebene Drucker-Objekte (Tests)."""
+        info = tape_info(templates)
+        if info["passt"] is not False:
+            return
+        wrong = [b for b in info["baender"] if b["band_mm"] and abs(b["band_mm"] - info["eingelegt_mm"]) > 0.5]
+        names = sorted(v for b in wrong for v in b["vorlagen"])
+        need = ", ".join(f"{b['band_mm']:g} mm" for b in wrong)
+        raise HTTPException(409, f"Falsches Band eingelegt: {info['eingelegt']} – {', '.join(names)} braucht {need}. "
+                                 f"Bitte Band wechseln, es wurde nichts gedruckt.")
+
     def require_direct_print() -> int:
         if not cfg.direct_print:
             raise HTTPException(400, "Direktdruck ist aus – in config.yaml unter druck: direktdruck: true setzen.")
@@ -525,7 +577,8 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
         return result
 
     @app.post("/api/name-labels/print")
-    def print_names():
+    def print_names(opts: PrintOptions | None = None):
+        opts = opts or PrintOptions()
         flags = require_direct_print()
         if not cfg.box_template:
             raise HTTPException(400, "Keine Box-Label-Vorlage (labels.box_vorlage) eingetragen.")
@@ -534,10 +587,35 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
         selected = [boxes[i] for i in state.data["name_queue"] if i in boxes]
         if not selected:
             raise HTTPException(400, "Keine Boxen in der Warteschlange.")
-        n = printer.print_labels(cfg.template_dir / cfg.box_template, name_label_rows(selected),
-                                 cfg.printer, flags)
+        if not opts.band_gewechselt:
+            check_tape([cfg.box_template])
+        n = printer.print_labels(cfg.template_dir / cfg.box_template,
+                                 copies(name_label_rows(selected), opts.kopien), cfg.printer, flags)
         state.set("last_name_export", [b.id for b in selected])
         return {"gedruckt": n, "boxen": [b.name for b in selected]}
+
+    @app.post("/api/druck/pruefen")
+    def print_check(req: PrintCheck):
+        """Vor dem Direktdruck: welches Band brauchen die Vorlagen, welches ist eingelegt, wie viele Labels."""
+        if req.art == "box":
+            if not cfg.box_template:
+                raise HTTPException(400, "Keine Box-Label-Vorlage (labels.box_vorlage) eingetragen.")
+            labels, templates, ohne = len(state.data["name_queue"]), [cfg.box_template], []
+        elif req.art in ("bauteile", "nachdruck"):
+            if req.art == "bauteile":
+                labs = _content_labels()
+            else:
+                with api() as c:
+                    boxes = load_boxes(c)
+                labs = [type("L", (), {"box": boxes[i]}) for i in dict.fromkeys(req.ids) if i in boxes]
+            templates, ohne = [], []
+            for l in labs:
+                bt = cfg.box_types.get(l.box.box_type)
+                (templates.append(bt.lbx) if bt and bt.lbx else ohne.append(l.box.name))
+            labels = len(templates)
+        else:
+            raise HTTPException(400, f"Unbekannte Druckart '{req.art}'.")
+        return dict(tape_info(templates), labels=labels, ohne_vorlage=ohne)
 
     @app.post("/api/name-labels/done")
     def names_done():
@@ -566,7 +644,8 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
             "warnungen": l.warnings,
         }
 
-    def _print_content(labels, flags: int) -> tuple[list[dict], list[str], list]:
+    def _print_content(labels, flags: int, kopien: int = 1,
+                       band_gewechselt: bool = False) -> tuple[list[dict], list[str], list]:
         """Direktdruck je Vorlage. -> (gedruckt, übersprungen, gedruckte Labels)."""
         by_template: dict[str, list] = {}
         skipped = []
@@ -589,15 +668,18 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
                 tape = None
             by_tape.setdefault(tape, []).append(lbx)
         batch = getattr(printer, "print_batch", None)
+        if not band_gewechselt:     # nach bestätigtem Wechsel prüft der Helfer das Band selbst (live)
+            check_tape([lbx for names in by_tape.values() for lbx in names])
         for names in by_tape.values():
-            jobs = [(cfg.template_dir / lbx, [l.row(cfg) for l in by_template[lbx]]) for lbx in names]
+            jobs = [(cfg.template_dir / lbx, copies([l.row(cfg) for l in by_template[lbx]], kopien))
+                    for lbx in names]
             if batch is not None:
                 batch(jobs, cfg.printer, flags)
             else:   # Drucker-Objekte ohne Sammeldruck (z. B. Test-Attrappen)
                 for path, rows in jobs:
                     printer.print_labels(path, rows, cfg.printer, flags)
             for lbx in names:
-                printed.append({"vorlage": lbx, "labels": len(by_template[lbx])})
+                printed.append({"vorlage": lbx, "labels": len(by_template[lbx]) * max(1, kopien)})
                 done.extend(by_template[lbx])
         return printed, skipped, done
 
@@ -635,7 +717,7 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
             raise HTTPException(404, f"Box(en) nicht (mehr) in Part-DB: {', '.join(map(str, missing))}")
         labels = [make_content_label(cfg, boxes[i], by_location.get(i, [])) for i in dict.fromkeys(req.ids)]
         if req.direkt:
-            printed, skipped, _ = _print_content(labels, flags)
+            printed, skipped, _ = _print_content(labels, flags, req.kopien, req.band_gewechselt)
             return {"gedruckt": printed, "uebersprungen": skipped}
         return {"dateien": export_content_labels(labels, cfg), "labels": len(labels)}
 
@@ -650,12 +732,13 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
         return {"dateien": written, "bauteile": len(part_ids)}
 
     @app.post("/api/content-labels/print")
-    def content_print():
+    def content_print(opts: PrintOptions | None = None):
+        opts = opts or PrintOptions()
         flags = require_direct_print()
         labels = _content_labels()
         if not labels:
             raise HTTPException(400, f"Keine Bauteile mit Tag '{cfg.label_tag}' gefunden.")
-        printed, skipped, done = _print_content(labels, flags)
+        printed, skipped, done = _print_content(labels, flags, opts.kopien, opts.band_gewechselt)
         part_ids = {pid for l in done for pid in l.tagged_part_ids}
         # Tags werden erst nach "Gedruckt – Tags entfernen" entfernt, nur für tatsächlich gedruckte Labels
         state.set("last_content_export", sorted(part_ids))

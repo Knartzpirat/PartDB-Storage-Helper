@@ -732,7 +732,8 @@ class HelferKern:
                 s = self.state_fn(name)
             except Exception as e:
                 s = {"angeschlossen": None, "status_text": f"Status nicht lesbar: {e}"}
-            states[name] = {"angeschlossen": s.get("angeschlossen"), "status_text": s.get("status_text", "")}
+            states[name] = {"angeschlossen": s.get("angeschlossen"), "status_text": s.get("status_text", ""),
+                            "band": s.get("band")}
         return {"protokoll": PROTOKOLL, "sammeldruck": True, "rechner": self.hostname, "version": __version__,
                 "installiert": self.installiert, "bpac": avail,
                 "bpac_grund": "" if avail else (st.get("grund") or "b-PAC nicht verfügbar"),
