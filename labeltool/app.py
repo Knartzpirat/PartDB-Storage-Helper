@@ -552,6 +552,7 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
                     name, build_comment(cat.name, color, req.compartments, req.box_type), req.parent_id)
                 created.append(parse_box(loc, cfg))
         state.queue_names([b.id for b in created])
+        state.set("last_created", [b.id for b in created])     # für „Rückgängig“
         return {"created": [b.to_dict() for b in created], "color": color, "color_hex": cfg.hex_for(color)}
 
     @app.put("/api/boxes/{lid}")
@@ -598,44 +599,75 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
             state.queue_names([lid])
         return {"box": new.to_dict(), "geaendert": True, "box_label_neu": relabel, "name_alt": old.name}
 
+    def deletable(c: PartDB, ids) -> tuple[list[dict], list[dict]]:
+        """(löschbar, nicht löschbar mit Grund) – löschbar sind nur leere Boxen: keine Bauteile, keine Unter-Lagerorte."""
+        locations = {ref_id(l): l for l in c.storage_locations()}
+        used: dict[int, list[str]] = {}
+        parts = c.parts()
+        lots = c.lots_by_part(parts)
+        for part in parts:
+            for lot in lots.get(ref_id(part), []):
+                used.setdefault(ref_id(lot.get("storage_location")), []).append(str(part.get("name") or ""))
+        children = {ref_id(l.get("parent")) for l in locations.values() if l.get("parent")}
+        ok, failed = [], []
+        for lid in dict.fromkeys(ids):
+            loc = locations.get(lid)
+            if loc is None:
+                failed.append({"id": lid, "name": str(lid), "grund": "gibt es in Part-DB nicht (mehr)"})
+                continue
+            name = str(loc.get("name") or lid)
+            if used.get(lid):
+                names = sorted(set(used[lid]))
+                failed.append({"id": lid, "name": name, "grund": f"enthält noch {len(names)} Bauteil(e): "
+                               + ", ".join(names[:5]) + (" …" if len(names) > 5 else "")})
+            elif lid in children:
+                failed.append({"id": lid, "name": name, "grund": "hat Unter-Lagerorte"})
+            else:
+                ok.append({"id": lid, "name": name})
+        return ok, failed
+
+    def _delete(c: PartDB, ids) -> dict:
+        ok, failed = deletable(c, ids)
+        deleted = []
+        for box in ok:
+            try:
+                c.delete_storage_location(box["id"])
+                deleted.append(box)
+            except PartDBError as e:
+                failed.append(dict(box, grund=str(e)))
+        gone = {d["id"] for d in deleted}
+        if gone:
+            for key in ("name_queue", "last_name_export", "last_created", "content_reprint", "last_content_reprint"):
+                state.set(key, [i for i in state.data[key] if i not in gone])
+        return {"geloescht": deleted, "fehler": failed}
+
     @app.post("/api/boxes/loeschen")
     def delete_boxes(req: BoxDelete):
         """Boxen in Part-DB löschen – nur leere: keine Bauteile darin, keine Lagerorte darunter."""
-        deleted, failed = [], []
         with api() as c:
-            locations = {ref_id(l): l for l in c.storage_locations()}
-            used: dict[int, list[str]] = {}
-            parts = c.parts()
-            lots = c.lots_by_part(parts)
-            for part in parts:
-                for lot in lots.get(ref_id(part), []):
-                    used.setdefault(ref_id(lot.get("storage_location")), []).append(str(part.get("name") or ""))
-            children = {ref_id(l.get("parent")) for l in locations.values() if l.get("parent")}
-            for lid in dict.fromkeys(req.ids):
-                loc = locations.get(lid)
-                if loc is None:
-                    failed.append({"id": lid, "name": str(lid), "grund": "gibt es in Part-DB nicht (mehr)"})
-                    continue
-                name = str(loc.get("name") or lid)
-                if used.get(lid):
-                    parts = sorted(set(used[lid]))
-                    failed.append({"id": lid, "name": name, "grund": f"enthält noch {len(parts)} Bauteil(e): "
-                                   + ", ".join(parts[:5]) + (" …" if len(parts) > 5 else "")})
-                    continue
-                if lid in children:
-                    failed.append({"id": lid, "name": name, "grund": "hat Unter-Lagerorte"})
-                    continue
-                try:
-                    c.delete_storage_location(lid)
-                except PartDBError as e:
-                    failed.append({"id": lid, "name": name, "grund": str(e)})
-                    continue
-                deleted.append({"id": lid, "name": name})
-        gone = {d["id"] for d in deleted}
-        if gone:
-            state.set("name_queue", [i for i in state.data["name_queue"] if i not in gone])
-            state.set("last_name_export", [i for i in state.data["last_name_export"] if i not in gone])
-        return {"geloescht": deleted, "fehler": failed}
+            return _delete(c, req.ids)
+
+    @app.get("/api/boxes/rueckgaengig")
+    def undo_info():
+        """Kann das letzte Anlegen gerade rückgängig gemacht werden? Nur Boxen, die es noch gibt und die leer sind."""
+        ids = state.data["last_created"]
+        if not ids:
+            return {"moeglich": False, "boxen": [], "gesperrt": [], "grund": "gerade nichts rückgängig zu machen"}
+        with api() as c:
+            ok, failed = deletable(c, ids)
+        failed = [f for f in failed if "nicht (mehr)" not in f["grund"]]   # schon gelöschte zählen nicht
+        grund = "" if ok else ("; ".join(f"{f['name']} {f['grund']}" for f in failed) or "Die Boxen gibt es nicht mehr.")
+        return {"moeglich": bool(ok), "boxen": ok, "gesperrt": failed, "grund": grund}
+
+    @app.post("/api/boxes/rueckgaengig")
+    def undo_create():
+        ids = state.data["last_created"]
+        if not ids:
+            raise HTTPException(400, "Es gibt nichts rückgängig zu machen.")
+        with api() as c:
+            result = _delete(c, ids)
+        state.set("last_created", [])    # nur einmal – danach ist das letzte Anlegen erledigt
+        return result
 
     # ------------------------------------------------------------- Namenslabels (12 mm)
     @app.get("/api/name-labels")
@@ -750,9 +782,15 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
 
     # ------------------------------------------------------------- Inhaltslabels (24 mm)
     def _content_labels():
+        """Druckliste: Boxen mit getaggten Bauteilen + Boxen aus der Nachdruck-Liste."""
         with api() as c:
             boxes = load_boxes(c)
-            return build_content_labels(c, cfg, boxes)
+            return build_content_labels(c, cfg, boxes, state.data["content_reprint"])
+
+    def _reprinted(labels) -> list[int]:
+        """Boxen der Nachdruck-Liste unter diesen Labels – werden mit „Gedruckt“ aus der Liste genommen."""
+        wanted = set(state.data["content_reprint"])
+        return [l.box.id for l in labels if l.box.id in wanted]
 
     def _label_dict(l) -> dict:
         return {
@@ -766,6 +804,8 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
                       for g in l.ordered_slots()],
             "row": l.row(cfg),
             "warnungen": l.warnings,
+            "getaggt": bool(l.tagged_part_ids),                     # bleibt, bis der Tag weg ist
+            "nachdruck": l.box.id in state.data["content_reprint"],  # in der UI wieder entfernbar
         }
 
     def _print_content(labels, flags: int, kopien: int = 1,
@@ -809,7 +849,8 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
 
     def label_list(done) -> list[dict]:
         """Gedruckte Bauteil-Labels für die Druckkontrolle – Nachdruck fehlender über die Box-ID."""
-        return [{"id": l.box.id, "name": l.box.name} for l in done]
+        return [{"id": l.box.id, "name": l.box.name,
+                 "vorlage": getattr(cfg.box_types.get(l.box.box_type), "lbx", "") or ""} for l in done]
 
     @app.get("/api/content-labels")
     def content_preview():
@@ -849,15 +890,38 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
             return {"gedruckt": printed, "uebersprungen": skipped, "labels": label_list(done)}
         return {"dateien": export_content_labels(labels, cfg), "labels": len(labels)}
 
+    @app.post("/api/content-labels/liste")
+    def reprint_list_add(req: IdList):
+        """Boxen zur Druckliste hinzufügen (Nachdruck ohne Tag)."""
+        with api() as c:
+            boxes = load_boxes(c)
+        missing = [i for i in req.ids if i not in boxes]
+        if missing:
+            raise HTTPException(404, f"Box(en) nicht (mehr) in Part-DB: {', '.join(map(str, missing))}")
+        added = [i for i in dict.fromkeys(req.ids) if i not in state.data["content_reprint"]]
+        state.set("content_reprint", state.data["content_reprint"] + added)
+        return {"hinzugefuegt": [boxes[i].name for i in added], "liste": state.data["content_reprint"]}
+
+    @app.delete("/api/content-labels/liste/{lid}")
+    def reprint_list_remove(lid: int):
+        """Nur Nachdruck-Einträge lassen sich entfernen – Boxen mit Tag bleiben, bis der Tag weg ist."""
+        if lid not in state.data["content_reprint"]:
+            raise HTTPException(404, "Die Box steht nicht als Nachdruck in der Liste – Boxen mit Tag "
+                                     "verschwinden erst, wenn der Tag in Part-DB entfernt ist.")
+        state.set("content_reprint", [i for i in state.data["content_reprint"] if i != lid])
+        state.set("last_content_reprint", [i for i in state.data["last_content_reprint"] if i != lid])
+        return {"liste": state.data["content_reprint"]}
+
     @app.post("/api/content-labels/export")
     def content_export():
         labels = _content_labels()
         if not labels:
-            raise HTTPException(400, f"Keine Bauteile mit Tag '{cfg.label_tag}' gefunden.")
+            raise HTTPException(400, f"Nichts in der Liste – keine Bauteile mit Tag '{cfg.label_tag}' und kein Nachdruck.")
         written = export_content_labels(labels, cfg)
         part_ids = sorted({pid for l in labels for pid in l.tagged_part_ids})
         state.set("last_content_export", part_ids)
-        return {"dateien": written, "bauteile": len(part_ids)}
+        state.set("last_content_reprint", _reprinted(labels))
+        return {"dateien": written, "bauteile": len(part_ids), "nachdruck": len(state.data["last_content_reprint"])}
 
     @app.post("/api/content-labels/print")
     def content_print(opts: PrintOptions | None = None):
@@ -865,19 +929,25 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
         flags = require_direct_print()
         labels = _content_labels()
         if not labels:
-            raise HTTPException(400, f"Keine Bauteile mit Tag '{cfg.label_tag}' gefunden.")
+            raise HTTPException(400, f"Nichts in der Liste – keine Bauteile mit Tag '{cfg.label_tag}' und kein Nachdruck.")
         printed, skipped, done = _print_content(labels, flags, opts.kopien, opts.band_gewechselt)
         part_ids = {pid for l in done for pid in l.tagged_part_ids}
-        # Tags werden erst nach "Gedruckt – Tags entfernen" entfernt, nur für tatsächlich gedruckte Labels
+        # Tags/Nachdruck-Einträge erst nach "Gedruckt – Tags entfernen", nur für tatsächlich gedruckte Labels
         state.set("last_content_export", sorted(part_ids))
-        return {"gedruckt": printed, "uebersprungen": skipped, "bauteile": len(part_ids), "labels": label_list(done)}
+        state.set("last_content_reprint", _reprinted(done))
+        return {"gedruckt": printed, "uebersprungen": skipped, "bauteile": len(part_ids),
+                "nachdruck": len(state.data["last_content_reprint"]), "labels": label_list(done)}
 
     @app.post("/api/content-labels/done")
     def content_done():
-        """Tag bei genau den Bauteilen entfernen, die im letzten Export waren."""
+        """Tag bei genau den Bauteilen entfernen, die im letzten Export waren; gedruckte Nachdruck-Einträge
+        aus der Liste nehmen."""
         ids = state.data["last_content_export"]
-        if not ids:
+        reprinted = set(state.data["last_content_reprint"])
+        if not ids and not reprinted:
             raise HTTPException(400, "Kein offener Export.")
+        state.set("content_reprint", [i for i in state.data["content_reprint"] if i not in reprinted])
+        state.set("last_content_reprint", [])
         removed, failed = 0, []
         with api() as c:
             for pid in ids:
@@ -890,7 +960,7 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
                 except PartDBError as e:
                     failed.append({"id": pid, "fehler": str(e)})
         state.set("last_content_export", [f["id"] for f in failed])
-        return {"entfernt": removed, "fehler": failed}
+        return {"entfernt": removed, "fehler": failed, "nachdruck_erledigt": len(reprinted)}
 
     routes_einstellungen.register(app, cfg, app.state.hooks, transport=transport)
     routes_helfer_download.register(app, cfg, app.state.hooks)

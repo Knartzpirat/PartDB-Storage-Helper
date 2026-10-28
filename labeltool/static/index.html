@@ -138,6 +138,7 @@
   .hexedit { display: flex; gap: 6px; align-items: center; }
   .hexedit input[type=text] { width: 90px; font-family: ui-monospace, Consolas, monospace; }
   .inq { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 10px; background: var(--ok-bg); color: var(--ok); }
+  .inq.tagq { background: var(--warn-bg); color: var(--warn); }
   .printconfirm { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 50;
                   width: min(640px, calc(100% - 24px)); max-height: calc(100vh - 32px); overflow: auto;
                   background: var(--panel); border: 1px solid var(--line);
@@ -149,9 +150,19 @@
   .printconfirm .row { margin-top: 10px; }
   .printconfirm input[type=number] { width: 80px; }
   .printconfirm .timer { margin-left: auto; color: var(--muted); font-size: 13px; }
-  .printconfirm .pk-list { display: flex; flex-wrap: wrap; gap: 6px 14px; max-height: 32vh; overflow: auto; margin-top: 6px; }
-  .printconfirm .pk-list label { display: flex; align-items: center; gap: 6px; margin: 0; font-weight: normal; }
-  .printconfirm #pk-queue { margin: 4px 0; }
+  .printcheck { width: min(760px, calc(100% - 24px)); }
+  .printcheck .pk-head { display: flex; align-items: center; gap: 8px; }
+  .printcheck .pk-head h4 { margin: 0; flex: 1; }
+  .printcheck #pk-queue { margin: 6px 0 4px; }
+  .printcheck .pk-table { max-height: min(45vh, 420px); overflow: auto; margin-top: 8px; border: 1px solid var(--line); border-radius: 6px; }
+  .printcheck .pk-table table { width: 100%; margin: 0; }
+  .printcheck .pk-table thead th { position: sticky; top: 0; z-index: 1; background: var(--panel); box-shadow: inset 0 -1px 0 var(--line); }
+  .printcheck .pk-table td, .printcheck .pk-table th { padding: 4px 8px; vertical-align: middle; }
+  .printcheck .pk-table td:first-child, .printcheck .pk-table th:first-child { width: 32px; text-align: center; }
+  .printcheck .pk-table tbody tr { cursor: pointer; }
+  .printcheck .pk-table tr.miss td { background: var(--err-bg); }
+  .printcheck .pk-table td.actions .btn { padding: 2px 8px; font-size: 12px; }
+  .printcheck .pk-table td.mono, .printcheck .pk-table td.actions { white-space: nowrap; }
   .hint { font-size: 12px; color: var(--muted); margin-top: 3px; }
   /* Arbeitsablauf Bauteil-Labels: 1 drucken · 2 prüfen · 3 Tags entfernen */
   .flow { list-style: none; margin: 4px 0 0; padding: 0; display: grid; grid-template-columns: 1.6fr 1fr 1.2fr; gap: 10px; counter-reset: st; }
@@ -297,6 +308,7 @@
     .kv { grid-template-columns: minmax(0, 1fr); gap: 0; }
     .kv dd { margin-bottom: 6px; }
     .printconfirm { bottom: 8px; padding: 12px; }
+    .printcheck .pk-tpl { display: none; }
     .printconfirm .timer { margin-left: 0; width: 100%; }
   }
 </style>
@@ -340,9 +352,9 @@
         <button class="btn primary" id="b-create">In Part-DB anlegen</button>
       </div>
       <div class="msg" id="m-new"></div>
-      <div class="row" id="undo-create" hidden>
-        <button class="btn danger" id="b-undo-create">Rückgängig</button>
-        <span class="muted">Falsch angelegt? Löscht genau diese Boxen wieder aus Part-DB (nur solange sie leer sind).</span>
+      <div class="row" id="undo-create">
+        <button class="btn" id="b-undo-create" disabled>↶ Letztes Anlegen rückgängig</button>
+        <span class="muted" id="undo-create-hint">Löscht die zuletzt angelegten Boxen wieder aus Part-DB – nur solange sie leer sind.</span>
       </div>
     </div>
 
@@ -387,40 +399,40 @@
   <!-- Bauteil-Labels -->
   <section id="tab-content">
     <div class="panel">
-      <h2>Bauteil-Labels <span class="muted">Boxen mit Bauteilen mit Tag <span class="mono" id="tagname"></span></span>
+      <h2>Bauteil-Labels <span class="muted">Boxen mit Tag <span class="mono" id="tagname"></span> und Nachdrucke</span>
         <button class="btn ghost sm" data-open data-desk title="Ausgabeordner mit den CSV-Dateien öffnen">Ordner öffnen</button>
         <button class="btn icon" id="b-content-reload" title="Neu laden (Part-DB erneut abfragen)" aria-label="Neu laden">⟳</button></h2>
       <ol class="flow" id="content-flow">
-        <li><strong>Drucken</strong><span class="muted">Alle Boxen auf einmal.</span>
+        <li><strong>Drucken</strong><span class="muted">Alle Boxen der Liste auf einmal – mit Tag und Nachdrucke.</span>
           <div class="row">
             <button class="btn primary" id="b-content-direct" hidden>Direkt drucken</button>
             <button class="btn primary" id="b-content-export">CSVs schreiben &amp; Vorlagen anzeigen</button>
           </div>
           <div class="hint" data-print-status></div></li>
         <li><strong>Prüfen</strong><span class="muted">Sind alle Labels sauber gedruckt? Sonst einfach nochmal drucken – die Tags bleiben bis Schritt 3.</span></li>
-        <li><strong>Tags entfernen</strong><span class="muted">Erst danach verschwinden die Bauteile aus dieser Liste.</span>
+        <li><strong>Tags entfernen</strong><span class="muted">Entfernt die Tags in Part-DB und nimmt die gedruckten Nachdrucke aus der Liste.</span>
           <div class="row"><button class="btn" id="b-content-done" disabled>Gedruckt – Tags entfernen</button></div></li>
       </ol>
       <div class="msg" id="m-content"></div>
       <div id="content-files"></div>
       <div id="content-list" style="margin-top:14px"></div>
-      <p class="muted" id="content-legend" style="margin:10px 0 0">Auf dem Label stehen alle Bauteile der Box; umrandete Felder sind die getaggten.</p>
+      <p class="muted" id="content-legend" style="margin:10px 0 0">Auf dem Label stehen alle Bauteile der Box; umrandete Felder sind die getaggten.
+        Boxen mit Tag verschwinden erst, wenn der Tag in Part-DB entfernt ist – Nachdrucke kannst du hier jederzeit herausnehmen.</p>
     </div>
 
     <div class="panel" id="reprint-panel" tabindex="-1">
-      <h2>Bauteil-Label nachdrucken</h2>
+      <h2>Bauteil-Label nachdrucken <span class="muted">zur Druckliste hinzufügen</span></h2>
       <p class="muted lead">Suche nach Box (<span class="mono">S0203</span>, <span class="mono">203</span>, Name), Inhalt, Lagerart oder Bauteil
-        (Name, <span class="mono">#304</span>, Herstellernummer, Footprint). Mehrere Wörter müssen alle passen. Tags in Part-DB bleiben unverändert.</p>
+        (Name, <span class="mono">#304</span>, Herstellernummer, Footprint). Mehrere Wörter müssen alle passen. Ausgewählte Boxen kommen oben in die Liste und werden mit den anderen gedruckt –
+        Tags in Part-DB bleiben unverändert.</p>
       <div class="grid"><div><label for="f-reprint">Suche</label>
         <input id="f-reprint" type="search" placeholder="z. B. S0250, MIC-2, ESP32, SOT-23 …" autocomplete="off"></div></div>
       <div class="row">
-        <button class="btn primary" id="b-reprint-direct" hidden disabled>Ausgewählte direkt drucken</button>
-        <button class="btn" id="b-reprint-csv" disabled>Ausgewählte als CSV schreiben</button>
+        <button class="btn primary" id="b-reprint-add" disabled>Zur Druckliste hinzufügen</button>
         <span class="muted" id="reprint-count" aria-live="polite">Noch nichts ausgewählt</span>
         <button class="btn ghost sm" id="b-reprint-clear" hidden>Auswahl aufheben</button>
       </div>
       <div class="msg" id="m-reprint"></div>
-      <div id="reprint-files"></div>
       <div id="reprint-list" style="margin-top:12px"></div>
     </div>
   </section>
@@ -662,7 +674,7 @@ function showTab(tab) {
     if (l < nav.scrollLeft + 16 || r > nav.scrollLeft + nav.clientWidth - 40)
       nav.scrollTo({left: Math.max(0, l - 24), behavior: "smooth"});
   }
-  ({names: loadNames, content: loadContent, boxes: loadBoxes, tpl: loadTemplates, master: loadMaster, settings: loadSettings})[tab]?.();
+  ({new: refreshUndo, names: loadNames, content: loadContent, boxes: loadBoxes, tpl: loadTemplates, master: loadMaster, settings: loadSettings})[tab]?.();
 }
 document.querySelectorAll("nav button").forEach(b => b.onclick = () => showTab(b.dataset.tab));
 // Status-Chip -> Reiter Einstellungen, passender Bereich
@@ -693,7 +705,7 @@ async function init() {
   fillSelects();
   ["#f-abbr", "#f-comp", "#f-count", "#f-color"].forEach(s => $(s).addEventListener("input", preview));
   $("#f-type").addEventListener("input", () => { applyBoxType(); preview(); });
-  applyBoxType(); preview(); loadNames(); loadContent(); loadPrintStatus();
+  applyBoxType(); preview(); loadNames(); loadContent(); loadPrintStatus(); refreshUndo();
 }
 // Direktdruck (b-PAC) ist optional: Knöpfe nur zeigen, wenn in config.yaml eingeschaltet
 let PRINT = {aktiv: false, ok: false};
@@ -705,14 +717,14 @@ async function loadPrintStatus() {
 // Wie viel gerade zu drucken ist – Druckknöpfe sind nur aktiv, wenn es etwas gibt
 const QUEUE = {names: 0, content: 0};
 const nothingFor = b => b.matches("[data-direct-names]") ? !QUEUE.names
-  : b.id === "b-content-direct" ? !QUEUE.content : b.id === "b-reprint-direct" ? !REPRINT.sel.size : false;
+  : b.id === "b-content-direct" ? !QUEUE.content : false;
 const directDisabled = b => !printGate().ok || nothingFor(b);
 function renderPrintStatus() {
   const g = printGate();
-  const direct = [...document.querySelectorAll("[data-direct-names]"), $("#b-content-direct"), $("#b-reprint-direct")];
+  const direct = [...document.querySelectorAll("[data-direct-names]"), $("#b-content-direct")];
   direct.forEach(b => { b.hidden = !PRINT.aktiv; b.disabled = !g.ok || nothingFor(b); b.title = g.ok ? "" : g.grund; });
   // Mit Direktdruck wird der CSV-Weg zum Zweitweg
-  document.querySelectorAll("[data-print-names], #b-content-export, #b-reprint-csv").forEach(b => b.classList.toggle("primary", !g.ok));
+  document.querySelectorAll("[data-print-names], #b-content-export").forEach(b => b.classList.toggle("primary", !g.ok));
   const link = !PRINT.ok && PRINT.hilfe_url ? ` <a href="${esc(PRINT.hilfe_url)}" target="_blank" rel="noopener">Zum Download bei Brother</a>` : "";
   document.querySelectorAll("[data-print-status]").forEach(el => el.innerHTML = !PRINT.aktiv ? ""
     : g.ok ? `Direktdruck bereit${PRINT.gewaehlt ? " – " + esc(PRINT.gewaehlt) : ""}`
@@ -904,35 +916,41 @@ $("#b-create").onclick = async () => {
       compartments: +$("#f-comp").value || 1, count: +$("#f-count").value || 1,
       color: $("#f-color").value || null });
     msg("#m-new", `Angelegt: ${r.created.map(b => `${b.name} (${b.barcode})`).join(", ")}\nBoxfarbe: ${r.color} – Box-Label unten drucken, sobald alle Boxen angelegt sind.`);
-    showUndoCreate(r.created);
+    refreshUndo();
     preview(); loadNames(); if (BOXES.length) loadBoxes();
   } catch (e) { msg("#m-new", e.message, false); }
   btn.disabled = false;
 };
 
-// Rückgängig: die zuletzt angelegten Boxen wieder löschen (bis zum nächsten Anlegen bzw. Neuladen)
-let LAST_CREATED = [];
-function showUndoCreate(created) {
-  LAST_CREATED = created || [];
-  const n = LAST_CREATED.length;
-  $("#undo-create").hidden = !n;
-  $("#b-undo-create").textContent = n === 1 ? `Rückgängig – ${LAST_CREATED[0].name} löschen` : `Rückgängig – ${n} Boxen löschen`;
+// Rückgängig: die zuletzt angelegten Boxen wieder löschen. Der Server merkt sich, welche das waren, und prüft,
+// ob es sie noch gibt und ob sie leer sind – nur dann ist der Knopf aktiv.
+let UNDO = {moeglich: false, boxen: []};
+async function refreshUndo() {
+  try { UNDO = await call("GET", "/api/boxes/rueckgaengig"); }
+  catch (e) { UNDO = {moeglich: false, boxen: [], grund: e.message}; }
+  const btn = $("#b-undo-create"), n = UNDO.boxen.length;
+  btn.disabled = !UNDO.moeglich;
+  btn.classList.toggle("danger", UNDO.moeglich);
+  btn.textContent = !n ? "↶ Letztes Anlegen rückgängig" : n === 1 ? `↶ Rückgängig – ${UNDO.boxen[0].name} löschen` : `↶ Rückgängig – ${n} Boxen löschen`;
+  btn.title = UNDO.moeglich ? "" : (UNDO.grund || "");
+  $("#undo-create-hint").textContent = UNDO.moeglich
+    ? (UNDO.gesperrt?.length ? `Bleiben stehen (nicht leer): ${UNDO.gesperrt.map(f => f.name).join(", ")}` : "Löscht diese Boxen wieder aus Part-DB.")
+    : `Nicht möglich: ${UNDO.grund || "nichts rückgängig zu machen"}`;
 }
 $("#b-undo-create").onclick = async () => {
-  const names = LAST_CREATED.map(b => b.name);
-  if (!names.length || !confirm(`Diese Box(en) wieder aus Part-DB löschen?\n\n${names.join("\n")}\n\nBoxen, in die schon Bauteile eingelagert wurden, bleiben stehen.`)) return;
+  await refreshUndo();                     // Stand direkt vor dem Löschen
+  const names = UNDO.boxen.map(b => b.name);
+  if (!UNDO.moeglich || !confirm(`Diese Box(en) wieder aus Part-DB löschen?\n\n${names.join("\n")}\n\nDas lässt sich nicht rückgängig machen.`)) return;
   const btn = $("#b-undo-create"); btn.disabled = true;
   try {
-    const r = await call("POST", "/api/boxes/loeschen", {ids: LAST_CREATED.map(b => b.id)});
-    const left = new Set(r.fehler.map(f => f.id));
+    const r = await call("POST", "/api/boxes/rueckgaengig");
     const lines = [];
     if (r.geloescht.length) lines.push(`Gelöscht: ${r.geloescht.map(d => d.name).join(", ")}`);
-    r.fehler.forEach(f => lines.push(`Nicht gelöscht: ${f.name} – ${f.grund}`));
-    msg("#m-new", lines.join("\n"), !r.fehler.length);
-    showUndoCreate(LAST_CREATED.filter(b => left.has(b.id) && !/nicht \(mehr\)/.test(r.fehler.find(f => f.id === b.id)?.grund || "")));
+    r.fehler.filter(f => !/nicht \(mehr\)/.test(f.grund)).forEach(f => lines.push(`Nicht gelöscht: ${f.name} – ${f.grund}`));
+    msg("#m-new", lines.join("\n") || "Nichts gelöscht.", !r.fehler.length);
     preview(); loadNames(); if (BOXES.length) loadBoxes();
   } catch (e) { msg("#m-new", e.message, false); }
-  btn.disabled = false;
+  refreshUndo();
 };
 
 // ---------- Bestätigung vor dem Direktdruck
@@ -996,32 +1014,61 @@ function closePrintCheck() {
 }
 function showPrintCheck(art, labels, kopien, msgId) {
   closePrintCheck();
-  const uniq = [...new Map((labels || []).map(l => [l.id, l])).values()];
+  const uniq = [...new Map((labels || []).map(l => [l.id, l])).values()];   // Reihenfolge = Druckreihenfolge
   if (!uniq.length) return;
+  const withTpl = uniq.some(l => l.vorlage);
   const el = $("#printcheck");
-  el.className = "printconfirm";
-  el.innerHTML = `<h4 id="pk-title">Druckkontrolle: ${uniq.length} Label(s)${kopien > 1 ? ` × ${kopien} Kopien` : ""}</h4>
+  el.className = "printconfirm printcheck";
+  el.innerHTML = `<div class="pk-head"><h4 id="pk-title">Druckkontrolle: ${uniq.length} Label(s)${kopien > 1 ? ` × ${kopien} Kopien` : ""}</h4>
+      <button class="btn ghost sm" id="pk-min" aria-expanded="true" aria-controls="pk-body">Einklappen</button></div>
     <div id="pk-queue" class="muted" aria-live="polite">Frage den Drucker ab …</div>
-    <div class="hint">Fehlt etwas? Fehlende ankreuzen und nur diese nachdrucken.</div>
-    <div class="pk-list">${uniq.map(l => `<label><input type="checkbox" value="${l.id}"> <span class="mono">${esc(l.name)}</span></label>`).join("")}</div>
-    <div class="row"><button class="btn primary" id="pk-reprint" disabled>Fehlende nachdrucken</button>
-      <button class="btn" id="pk-ok">${art === "box" ? "Alle da – als gedruckt markieren" : "Alle da – schließen"}</button></div>`;
+    <div id="pk-body">
+      <div class="hint">Fehlende ankreuzen. Ist das Band ausgegangen, fehlt meist alles ab einem Label – dort auf „ab hier“ klicken.</div>
+      <div class="pk-table"><table class="compact"><thead><tr>
+          <th><input type="checkbox" id="pk-all" aria-label="Alle als fehlend markieren"></th><th>#</th><th>Box</th>${withTpl ? `<th class="pk-tpl">Vorlage</th>` : ""}<th></th></tr></thead>
+        <tbody>${uniq.map((l, i) => `<tr data-i="${i}"><td><input type="checkbox" value="${l.id}" aria-label="${esc(l.name)} fehlt"></td>
+          <td class="muted">${i + 1}</td><td class="mono">${esc(l.name)}</td>${withTpl ? `<td class="muted pk-tpl">${esc(l.vorlage || "")}</td>` : ""}
+          <td class="actions"><button class="btn ghost" data-from="${i}" title="Dieses und alle folgenden Labels als fehlend markieren">ab hier</button></td></tr>`).join("")}</tbody></table></div>
+      <div class="row"><span class="muted" id="pk-count" aria-live="polite"></span>
+        <button class="btn primary" id="pk-reprint" disabled>Fehlende nachdrucken</button>
+        <button class="btn" id="pk-ok">${art === "box" ? "Alle da – als gedruckt markieren" : "Alle da – schließen"}</button></div>
+    </div>`;
   el.hidden = false;
   const token = {};
   PK = {token};
-  const picked = () => [...el.querySelectorAll(".pk-list input:checked")].map(i => +i.value);
-  el.querySelectorAll(".pk-list input").forEach(i => i.onchange = () => {
+  const boxes = [...el.querySelectorAll("tbody input")];
+  const picked = () => boxes.filter(i => i.checked).map(i => +i.value);
+  const update = () => {
     const n = picked().length;
+    boxes.forEach(i => i.closest("tr").classList.toggle("miss", i.checked));
+    $("#pk-all").checked = n === boxes.length;
+    $("#pk-all").indeterminate = n > 0 && n < boxes.length;
+    $("#pk-count").textContent = n ? `${n} von ${boxes.length} fehlen` : "Nichts als fehlend markiert";
     $("#pk-reprint").disabled = !n;
     $("#pk-reprint").textContent = n ? `${n} fehlende(s) nachdrucken` : "Fehlende nachdrucken";
-  });
+  };
+  el.querySelector("tbody").onclick = e => {
+    const from = e.target.closest("[data-from]");
+    if (from) { boxes.slice(+from.dataset.from).forEach(i => i.checked = true); update(); return; }
+    const tr = e.target.closest("tr");
+    if (tr && e.target.tagName !== "INPUT") { const i = tr.querySelector("input"); i.checked = !i.checked; }
+    update();
+  };
+  $("#pk-all").onchange = e => { boxes.forEach(i => i.checked = e.target.checked); update(); };
+  $("#pk-min").onclick = () => {
+    const body = $("#pk-body"); body.hidden = !body.hidden;
+    $("#pk-min").textContent = body.hidden ? "Aufklappen" : "Einklappen";
+    $("#pk-min").setAttribute("aria-expanded", String(!body.hidden));
+  };
   $("#pk-reprint").onclick = () => reprintMissing(art, picked(), msgId);
   $("#pk-ok").onclick = async () => {
+    if (art !== "box") { closePrintCheck(); return; }
+    if (!confirm("Alle Box-Labels sind sauber gedruckt? Die Boxen verschwinden dann aus der Warteschlange.")) return;
     closePrintCheck();
-    if (art !== "box") return;
     try { const r = await call("POST", "/api/name-labels/done"); msg(msgId, `${r.erledigt} Box(en) als beschriftet markiert.`); loadNames(); }
     catch (e) { msg(msgId, e.message, false); }
   };
+  update();
   pollQueue(token);
 }
 async function pollQueue(token) {
@@ -1077,7 +1124,7 @@ async function loadNames() {
     $("#c-new-queue").textContent = n;
     const cells = b => `<td class="mono lead1">${esc(b.name)}</td><td class="mono" data-label="Barcode">${esc(b.barcode)}</td>
       <td data-label="Inhalt">${esc(b.content)}</td><td data-label="Boxfarbe">${sw(b.color_hex)}${esc(b.color)}</td><td data-label="Lagerart">${esc(b.box_type)}</td>`;
-    const remove = b => `<button class="btn del" onclick="unqueue(${b.id})" title="Aus der Warteschlange nehmen (Box bleibt in Part-DB)">Entfernen</button>`;
+    const remove = b => `<button class="btn del" onclick="unqueue(${b.id}, ${jsArg(b.name)})" title="Aus der Warteschlange nehmen (Box bleibt in Part-DB)">Entfernen</button>`;
     $("#t-new-queue").innerHTML = r.boxes.map(b => `<tr>${cells(b)}<td data-label="Abteile">${esc(b.compartments)}</td>
       <td class="actions">${pvRowButton(b, "q", 7)} ${remove(b)}</td></tr>`).join("");
     $("#t-names").innerHTML = r.boxes.map(b => `<tr>${cells(b)}
@@ -1092,7 +1139,12 @@ async function loadNames() {
     if (r.missing.length) msg("#m-names", `In Part-DB nicht mehr vorhanden: ${r.missing.join(", ")}`, false);
   } catch (e) { msg("#m-names", e.message, false); }
 }
-async function unqueue(id) { await call("DELETE", "/api/name-labels/queue/" + id); loadNames(); }
+async function unqueue(id, name) {
+  if (!confirm(`${name} aus der Warteschlange der Box-Labels nehmen?\n\nDie Box bleibt in Part-DB, es wird nur kein Box-Label gedruckt. `
+             + `Zurückholen: „Alle Boxen“ > „Box-Label“.`)) return;
+  try { await call("DELETE", "/api/name-labels/queue/" + id); } catch (e) { msg(namesMsg(), e.message, false); }
+  loadNames();
+}
 // Box-Labels: gleiche Knöpfe in "Neue Box" und im Reiter Box-Labels
 const namesMsg = () => $("#tab-new").classList.contains("active") ? "#m-new-queue" : "#m-names";
 document.querySelectorAll("[data-print-names]").forEach(b => b.onclick = async () => {
@@ -1139,18 +1191,21 @@ async function loadContent() {
     $("#content-list").innerHTML = list.map(l => `
       <div class="card">
         <h3>${sw(l.box.color_hex)}<span class="mono">${esc(l.box.name)}</span>
-          <span class="muted">${esc(l.box.content)} · ${esc(l.box.box_type || "ohne Lagerart")} · Vorlage ${esc(l.vorlage)}</span></h3>
+          <span class="muted">${esc(l.box.content)} · ${esc(l.box.box_type || "ohne Lagerart")} · Vorlage ${esc(l.vorlage)}</span>
+          ${l.nachdruck ? `<span class="inq" title="Von Hand zur Liste hinzugefügt">Nachdruck</span>` : ""}
+          ${l.getaggt ? `<span class="inq tagq" title="Bauteile mit Tag ${esc(META?.tag || "")} – verschwindet erst, wenn der Tag entfernt ist">Tag ${esc(META?.tag || "")}</span>` : ""}</h3>
         <div class="muted">Kategorie auf Label: ${esc(l.row.Category)}</div>
         <div class="label24" style="grid-template-columns: repeat(${Math.min(l.felder, 6)}, 1fr)">
           ${l.slots.map((s, i) => `<div class="slot ${s && s.tag ? "tag" : ""}"><small>${i + 1}</small>${s ? esc(s.name) + `<small>${esc(s.footprint)}</small>` : ""}</div>`).join("")}
         </div>
         ${l.warnungen.map(w => `<div class="warn">${esc(w)}</div>`).join("")}
         <div class="row" style="margin-top:8px"><button class="btn sm" data-pv aria-expanded="false" aria-controls="pv-c-${l.box.id}"
-          onclick="toggleCardPreview(this, ${l.box.id}, ${jsArg(l.box.name)})">Vorschau</button></div>
+          onclick="toggleCardPreview(this, ${l.box.id}, ${jsArg(l.box.name)})">Vorschau</button>
+          ${l.nachdruck ? `<button class="btn sm del" onclick="unlistReprint(${l.box.id}, ${jsArg(l.box.name)}, ${l.getaggt})">Aus Liste nehmen</button>` : ""}</div>
         <div class="labelstage" id="pv-c-${l.box.id}" aria-live="polite" hidden></div>
       </div>`).join("") || `<div class="empty"><span class="ico" aria-hidden="true">✓</span><strong>Alles beschriftet</strong>
         Kein Bauteil trägt gerade den Tag <span class="mono">${esc(META?.tag || "")}</span>. Markierst du in Part-DB ein Bauteil damit,
-        erscheint seine Box hier – mit „⟳“ neu laden. Einzelne Boxen druckst du unten nach.</div>`;
+        erscheint seine Box hier – mit „⟳“ neu laden. Einzelne Boxen fügst du unten über „Nachdrucken“ hinzu.</div>`;
     sweepPreviews(); applyGates();
   } catch (e) { $("#content-list").innerHTML = ""; msg("#m-content", e.message, false); }
 }
@@ -1158,7 +1213,7 @@ $("#b-content-reload").onclick = loadContent;
 $("#b-content-export").onclick = async () => {
   try {
     const r = await call("POST", "/api/content-labels/export");
-    msg("#m-content", `${r.bauteile} Bauteile in ${r.dateien.length} Datei(en) geschrieben. Vorlage öffnen, alle Datensätze drucken, dann „Gedruckt – Tags entfernen“.`);
+    msg("#m-content", `${r.bauteile} getaggte Bauteile${r.nachdruck ? ` und ${r.nachdruck} Nachdruck(e)` : ""} in ${r.dateien.length} Datei(en) geschrieben. Vorlage öffnen, alle Datensätze drucken, dann „Gedruckt – Tags entfernen“.`);
     $("#content-files").innerHTML = csvFilesTable(r.dateien);
     downloadCsv(r.dateien.map(d => d.datei));
     $("#b-content-done").disabled = false; applyGates();
@@ -1174,15 +1229,16 @@ $("#b-content-direct").onclick = async () => {
     if (r.uebersprungen.length) lines.push(`Ohne Vorlage übersprungen: ${r.uebersprungen.join(", ")}`);
     msg("#m-content", `Gedruckt:\n${lines.join("\n")}\nWenn alles passt: „Gedruckt – Tags entfernen“.`, !r.uebersprungen.length);
     showPrintCheck("bauteile", r.labels, opts.kopien, "#m-content");
-    $("#b-content-done").disabled = !r.bauteile;
+    $("#b-content-done").disabled = !(r.bauteile || r.nachdruck);
   } catch (e) { msg("#m-content", e.message, false); }
   b.disabled = directDisabled(b);
 };
 $("#b-content-done").onclick = async () => {
-  if (!confirm(`Tag "${META.tag}" bei den exportierten Bauteilen in Part-DB entfernen?`)) return;
+  if (!confirm(`Alle Labels sauber gedruckt?\n\nTag "${META.tag}" wird bei den gedruckten Bauteilen in Part-DB entfernt `
+             + `und gedruckte Nachdrucke kommen aus der Liste.`)) return;
   try {
     const r = await call("POST", "/api/content-labels/done");
-    msg("#m-content", `Tag bei ${r.entfernt} Bauteilen entfernt.` + (r.fehler.length ? `\nFehler: ${r.fehler.map(f => f.id + ": " + f.fehler).join("\n")}` : ""), !r.fehler.length);
+    msg("#m-content", `Tag bei ${r.entfernt} Bauteilen entfernt.` + (r.nachdruck_erledigt ? ` ${r.nachdruck_erledigt} Nachdruck(e) erledigt.` : "") + (r.fehler.length ? `\nFehler: ${r.fehler.map(f => f.id + ": " + f.fehler).join("\n")}` : ""), !r.fehler.length);
     $("#b-content-done").disabled = !r.fehler.length;
     loadContent();
   } catch (e) { msg("#m-content", e.message, false); }
@@ -1263,8 +1319,7 @@ function updateReprintCount() {
   $("#reprint-count").textContent = n ? `${n} Box${n === 1 ? "" : "en"} ausgewählt` + (n > REPRINT.hits.filter(h => REPRINT.sel.has(h.box.id)).length
     ? " (auch aus früheren Suchen)" : "") : "Noch nichts ausgewählt";
   $("#b-reprint-clear").hidden = !n;
-  $("#b-reprint-csv").disabled = !n;
-  $("#b-reprint-direct").disabled = directDisabled($("#b-reprint-direct"));
+  $("#b-reprint-add").disabled = !n;
 }
 $("#b-reprint-clear").onclick = () => { REPRINT.sel.clear(); renderReprint(); };
 // Aus „Alle Boxen“: Box in die Nachdruck-Auswahl übernehmen und zum Nachdruck springen
@@ -1279,37 +1334,30 @@ function reprintBox(id) {
   p.scrollIntoView({block: "start", behavior: "smooth"});
   p.focus({preventScroll: true});
 }
-async function reprint(direkt) {
+async function addToList() {
   const ids = [...REPRINT.sel];
   if (!ids.length) { msg("#m-reprint", "Bitte erst eine oder mehrere Boxen auswählen.", false); return; }
-  const btn = direkt ? $("#b-reprint-direct") : $("#b-reprint-csv"); btn.disabled = true;
+  const btn = $("#b-reprint-add"); btn.disabled = true;
   try {
-    let opts = {};
-    if (direkt) {
-      opts = await confirmPrint("nachdruck", ids, "Nachdruck");
-      if (!opts) { msg("#m-reprint", "Druck nicht bestätigt – nichts gedruckt.", false); updateReprintCount(); return; }
-    }
-    const r = await call("POST", "/api/content-labels/nachdruck", {ids, direkt, ...opts});
-    if (direkt) {
-      const lines = r.gedruckt.map(g => `${g.vorlage}: ${g.labels} Label(s)`);
-      if (r.uebersprungen.length) lines.push(`Ohne Vorlage übersprungen: ${r.uebersprungen.join(", ")}`);
-      msg("#m-reprint", `Nachgedruckt:\n${lines.join("\n")}`, !r.uebersprungen.length);
-      showPrintCheck("nachdruck", r.labels, opts.kopien, "#m-reprint");
-      $("#reprint-files").innerHTML = "";
-    } else {
-      msg("#m-reprint", `${r.labels} Label(s) in ${r.dateien.length} Datei(en) geschrieben – Vorlage öffnen und alle Datensätze drucken.`);
-      $("#reprint-files").innerHTML = csvFilesTable(r.dateien);
-      downloadCsv(r.dateien.map(d => d.datei));
-    }
+    const r = await call("POST", "/api/content-labels/liste", {ids});
+    msg("#m-reprint", r.hinzugefuegt.length
+      ? `Zur Druckliste hinzugefügt: ${r.hinzugefuegt.join(", ")} – oben mit den anderen drucken.`
+      : "Die Boxen stehen schon in der Druckliste.");
     REPRINT.sel.clear(); renderReprint();
+    await loadContent();
+    $("#content-list").scrollIntoView({block: "start", behavior: "smooth"});
   } catch (e) { msg("#m-reprint", e.message, false); }
   updateReprintCount();
-  applyGates();
+}
+async function unlistReprint(id, name, getaggt) {
+  if (!confirm(`${name} aus der Druckliste nehmen?` + (getaggt
+    ? `\n\nDie Box bleibt trotzdem in der Liste, weil Bauteile darin den Tag „${META.tag}“ haben.` : ""))) return;
+  try { await call("DELETE", `/api/content-labels/liste/${id}`); } catch (e) { msg("#m-content", e.message, false); }
+  loadContent();
 }
 $("#f-reprint").addEventListener("input", () => reprintSearch());
 $("#f-reprint").addEventListener("keydown", e => { if (e.key === "Enter") reprintSearch(true); });
-$("#b-reprint-direct").onclick = () => reprint(true);
-$("#b-reprint-csv").onclick = () => reprint(false);
+$("#b-reprint-add").onclick = addToList;
 
 async function openTemplate(boxType, btn) {
   btn.disabled = true;
@@ -1402,7 +1450,7 @@ async function deleteBox(id) {
     BOX_DEL = null;
     if (r.geloescht.length) msg("#m-boxes", `${b.name} gelöscht.`);
     else msg("#m-boxes", `${b.name} nicht gelöscht: ${r.fehler.map(f => f.grund).join(", ")}`, false);
-    LAST_CREATED = LAST_CREATED.filter(x => x.id !== id); showUndoCreate(LAST_CREATED);
+    refreshUndo();
     loadBoxes(); loadNames(); preview();
   } catch (e) { BOX_DEL = null; renderBoxes(); msg("#m-boxes", e.message, false); }
 }
@@ -1579,6 +1627,7 @@ async function confirmDelete(kind, key, label) {
   } catch (e) { msg("#m-master", e.message, false); }
 }
 $("#b-undo").onclick = async () => {
+  if (!confirm(`Rückgängig machen: ${$("#undo-text").textContent}?`)) return;
   try {
     const data = await call("POST", "/api/stammdaten/undo");
     EDIT = null; renderMaster(data);

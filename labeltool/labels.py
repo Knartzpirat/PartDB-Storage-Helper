@@ -188,11 +188,12 @@ def make_content_label(cfg: Config, box: Box, parts: list[PartEntry]) -> Content
     return label
 
 
-def build_content_labels(api: PartDB, cfg: Config, boxes: dict[int, Box]) -> list[ContentLabel]:
-    """Alle Boxen, in denen mindestens ein Bauteil den Tag hat – mit ALLEN Bauteilen der Box."""
+def build_content_labels(api: PartDB, cfg: Config, boxes: dict[int, Box], extra=()) -> list[ContentLabel]:
+    """Alle Boxen, in denen mindestens ein Bauteil den Tag hat, plus die Boxen aus `extra` (Nachdruck-Liste)
+    – jeweils mit ALLEN Bauteilen der Box, jede Box nur einmal."""
     by_location, locations_with_tag = parts_by_location(api, cfg)
-    return [make_content_label(cfg, boxes[lid], by_location[lid])
-            for lid in sorted(locations_with_tag) if lid in boxes]
+    ids = sorted(locations_with_tag | {int(i) for i in extra})
+    return [make_content_label(cfg, boxes[lid], by_location.get(lid, [])) for lid in ids if lid in boxes]
 
 
 def content_label_for_box(api: PartDB, cfg: Config, box: Box) -> ContentLabel:

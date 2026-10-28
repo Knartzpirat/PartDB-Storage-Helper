@@ -86,3 +86,39 @@ def test_bearbeiten_behaelt_freitext_und_meldet_namenskonflikt(tmp_path):
     fake.locations[777] = {"id": 777, "name": "MIC-1.0020", "comment": ""}
     r = c.put("/api/boxes/203", json={"abbr": "MIC", "compartments": 1, "box_type": "WinBin2"})
     assert r.status_code == 409 and fake.locations[203]["name"] == "MIC-2.0020"
+
+
+def test_rueckgaengig_nur_wenn_moeglich(tmp_path):
+    c, fake, _ = make(tmp_path)
+    info = c.get("/api/boxes/rueckgaengig").json()
+    assert info["moeglich"] is False and info["boxen"] == []                   # noch nichts angelegt
+    assert c.post("/api/boxes/rueckgaengig").status_code == 400
+
+    created = c.post("/api/boxes", json={"abbr": "MIC", "compartments": 2, "box_type": "WinBin2", "count": 2}).json()["created"]
+    a, b = (x["id"] for x in created)
+    info = c.get("/api/boxes/rueckgaengig").json()
+    assert info["moeglich"] is True and [x["id"] for x in info["boxen"]] == [a, b]
+
+    # in eine Box wird ein Bauteil eingelagert -> sie bleibt, die andere ist weiter löschbar
+    fake.parts[306]["partLots"].append({"id": 9, "description": "", "storage_location": {"id": b}})
+    info = c.get("/api/boxes/rueckgaengig").json()
+    assert [x["id"] for x in info["boxen"]] == [a] and info["gesperrt"][0]["id"] == b
+
+    r = c.post("/api/boxes/rueckgaengig").json()
+    assert [d["id"] for d in r["geloescht"]] == [a] and b in fake.locations
+    info = c.get("/api/boxes/rueckgaengig").json()                              # nur einmal
+    assert info["moeglich"] is False and c.post("/api/boxes/rueckgaengig").status_code == 400
+
+
+def test_rueckgaengig_gesperrt_wenn_alles_belegt(tmp_path):
+    c, fake, _ = make(tmp_path)
+    box = c.post("/api/boxes", json={"abbr": "MIC", "compartments": 1, "box_type": "WinBin2"}).json()["created"][0]
+    fake.parts[306]["partLots"].append({"id": 9, "description": "", "storage_location": {"id": box["id"]}})
+    info = c.get("/api/boxes/rueckgaengig").json()
+    assert info["moeglich"] is False and "ESP32-C3" in info["grund"]
+
+    # einzeln gelöschte Box zählt nicht mehr fürs Rückgängig
+    fake.parts[306]["partLots"].pop()
+    c.post("/api/boxes/loeschen", json={"ids": [box["id"]]})
+    info = c.get("/api/boxes/rueckgaengig").json()
+    assert info["moeglich"] is False and info["boxen"] == []

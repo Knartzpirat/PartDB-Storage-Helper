@@ -9,6 +9,9 @@ _DEFAULT = {
     "name_queue": [],          # Lagerort-IDs, die ein 12-mm-Namenslabel brauchen
     "last_name_export": [],    # IDs aus dem letzten Namenslabel-Export
     "last_content_export": [], # Part-IDs, deren Tag nach dem Druck entfernt wird
+    "last_created": [],        # zuletzt angelegte Boxen (für „Rückgängig“)
+    "content_reprint": [],     # Boxen, deren Bauteil-Label zusätzlich (ohne Tag) gedruckt werden soll
+    "last_content_reprint": [],  # davon im letzten Export/Druck – erledigt mit „Gedruckt“
 }
 
 

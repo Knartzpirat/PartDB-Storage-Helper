@@ -71,3 +71,54 @@ def test_nachdruck_csv_und_schutz(tmp_path):
     # direkt drucken geht trotzdem, der offene Export bleibt bestehen
     assert c.post("/api/content-labels/nachdruck", json={"ids": [250], "direkt": True}).status_code == 200
     assert c.post("/api/content-labels/done").json()["entfernt"] == 1
+
+
+def test_druckliste_mit_nachdrucken(tmp_path):
+    _, fake, cfg = make(tmp_path)
+    prn = FakePrinter()
+    cfg.direct_print = True
+    c = TestClient(create_app(cfg, transport=httpx.MockTransport(fake), opener=lambda p: None, printer=prn))
+    liste = lambda: {l["box"]["name"]: (l["getaggt"], l["nachdruck"]) for l in c.get("/api/content-labels").json()}
+    assert liste() == {"SMDICs-1.0013": (True, False)}                     # nur die Box mit Tag
+
+    # Nachdruck hinzufügen – auch die getaggte Box (doppelt erscheint sie nicht)
+    r = c.post("/api/content-labels/liste", json={"ids": [203, 250, 203]}).json()
+    assert r["hinzugefuegt"] == ["MIC-2.0020", "SMDICs-1.0013"]
+    assert liste() == {"MIC-2.0020": (False, True), "SMDICs-1.0013": (True, True)}
+    assert c.post("/api/content-labels/liste", json={"ids": [203]}).json()["hinzugefuegt"] == []
+    assert c.post("/api/content-labels/liste", json={"ids": [999]}).status_code == 404
+
+    # nur Nachdrucke lassen sich entfernen; die getaggte Box bleibt trotzdem (wegen Tag)
+    assert c.delete("/api/content-labels/liste/250").status_code == 200
+    assert liste() == {"MIC-2.0020": (False, True), "SMDICs-1.0013": (True, False)}
+    r = c.delete("/api/content-labels/liste/250")
+    assert r.status_code == 404 and "Tag" in r.json()["detail"]
+
+    # drucken: beide; „Gedruckt“ entfernt Tag und Nachdruck-Eintrag
+    r = c.post("/api/content-labels/print").json()
+    assert sorted(l["name"] for l in r["labels"]) == ["MIC-2.0020", "SMDICs-1.0013"] and r["nachdruck"] == 1
+    c.post("/api/content-labels/liste", json={"ids": [250]})              # nach dem Druck hinzugefügt: bleibt
+    d = c.post("/api/content-labels/done").json()
+    assert d["entfernt"] == 1 and d["nachdruck_erledigt"] == 1
+    assert liste() == {"SMDICs-1.0013": (False, True)}
+
+
+def test_nur_nachdrucke_exportieren(tmp_path):
+    _, fake, cfg = make(tmp_path)
+    fake.parts[304]["tags"] = ""                                            # kein Tag mehr
+    c = TestClient(create_app(cfg, transport=httpx.MockTransport(fake), opener=lambda p: None, printer=FakePrinter()))
+    assert c.post("/api/content-labels/export").status_code == 400
+    c.post("/api/content-labels/liste", json={"ids": [203]})
+    r = c.post("/api/content-labels/export").json()
+    assert r["bauteile"] == 0 and r["nachdruck"] == 1
+    assert c.post("/api/content-labels/done").json()["nachdruck_erledigt"] == 1
+    assert c.get("/api/content-labels").json() == []
+    assert c.post("/api/content-labels/done").status_code == 400
+
+
+def test_geloeschte_box_verschwindet_aus_der_liste(tmp_path):
+    c, fake, cfg = make(tmp_path)
+    box = c.post("/api/boxes", json={"abbr": "MIC", "compartments": 1, "box_type": "WinBin2"}).json()["created"][0]
+    c.post("/api/content-labels/liste", json={"ids": [box["id"]]})
+    assert c.post("/api/boxes/loeschen", json={"ids": [box["id"]]}).json()["geloescht"]
+    assert box["id"] not in [l["box"]["id"] for l in c.get("/api/content-labels").json()]
