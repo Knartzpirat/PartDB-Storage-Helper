@@ -143,11 +143,15 @@
                   background: var(--panel); border: 1px solid var(--line);
                   border-left: 4px solid var(--accent); border-radius: 10px; padding: 14px 16px;
                   box-shadow: 0 8px 28px rgba(0,0,0,.25); overflow-wrap: anywhere; }
+  #printconfirm { z-index: 51; }     /* über der Druckkontrolle */
   .printconfirm.wrong { border-left-color: var(--err); background: var(--err-bg); }
   .printconfirm h4 { margin: 0 0 6px; font-size: 15px; }
   .printconfirm .row { margin-top: 10px; }
   .printconfirm input[type=number] { width: 80px; }
   .printconfirm .timer { margin-left: auto; color: var(--muted); font-size: 13px; }
+  .printconfirm .pk-list { display: flex; flex-wrap: wrap; gap: 6px 14px; max-height: 32vh; overflow: auto; margin-top: 6px; }
+  .printconfirm .pk-list label { display: flex; align-items: center; gap: 6px; margin: 0; font-weight: normal; }
+  .printconfirm #pk-queue { margin: 4px 0; }
   .hint { font-size: 12px; color: var(--muted); margin-top: 3px; }
   /* Arbeitsablauf Bauteil-Labels: 1 drucken · 2 prüfen · 3 Tags entfernen */
   .flow { list-style: none; margin: 4px 0 0; padding: 0; display: grid; grid-template-columns: 1.6fr 1fr 1.2fr; gap: 10px; counter-reset: st; }
@@ -618,6 +622,7 @@
   </section>
 </main>
 <div class="printconfirm" id="printconfirm" role="alertdialog" aria-modal="false" aria-labelledby="pc-title" hidden></div>
+<div class="printconfirm" id="printcheck" role="region" aria-labelledby="pk-title" hidden></div>
 
 <script>
 const $ = s => document.querySelector(s);
@@ -949,6 +954,88 @@ async function confirmPrint(art, ids, titel) {
   });
 }
 
+// ---------- Druckkontrolle nach dem Direktdruck
+// Listet die gesendeten Labels: fehlende (z. B. Band leer) ankreuzen und nur diese nachdrucken. Dazu zeigt
+// die Windows-Warteschlange, ob der Drucker fertig ist oder einen Fehler meldet. Welche Labels genau
+// fehlen, weiß Windows nicht – das sieht nur, wer vor dem Drucker steht.
+const QUEUE_POLL_MS = 2000, QUEUE_MAX_MS = 10 * 60 * 1000;
+let PK = null;
+function closePrintCheck() {
+  PK = null;
+  $("#printcheck").hidden = true; $("#printcheck").innerHTML = "";
+}
+function showPrintCheck(art, labels, kopien, msgId) {
+  closePrintCheck();
+  const uniq = [...new Map((labels || []).map(l => [l.id, l])).values()];
+  if (!uniq.length) return;
+  const el = $("#printcheck");
+  el.className = "printconfirm";
+  el.innerHTML = `<h4 id="pk-title">Druckkontrolle: ${uniq.length} Label(s)${kopien > 1 ? ` × ${kopien} Kopien` : ""}</h4>
+    <div id="pk-queue" class="muted" aria-live="polite">Frage den Drucker ab …</div>
+    <div class="hint">Fehlt etwas? Fehlende ankreuzen und nur diese nachdrucken.</div>
+    <div class="pk-list">${uniq.map(l => `<label><input type="checkbox" value="${l.id}"> <span class="mono">${esc(l.name)}</span></label>`).join("")}</div>
+    <div class="row"><button class="btn primary" id="pk-reprint" disabled>Fehlende nachdrucken</button>
+      <button class="btn" id="pk-ok">${art === "box" ? "Alle da – als gedruckt markieren" : "Alle da – schließen"}</button></div>`;
+  el.hidden = false;
+  const token = {};
+  PK = {token};
+  const picked = () => [...el.querySelectorAll(".pk-list input:checked")].map(i => +i.value);
+  el.querySelectorAll(".pk-list input").forEach(i => i.onchange = () => {
+    const n = picked().length;
+    $("#pk-reprint").disabled = !n;
+    $("#pk-reprint").textContent = n ? `${n} fehlende(s) nachdrucken` : "Fehlende nachdrucken";
+  });
+  $("#pk-reprint").onclick = () => reprintMissing(art, picked(), msgId);
+  $("#pk-ok").onclick = async () => {
+    closePrintCheck();
+    if (art !== "box") return;
+    try { const r = await call("POST", "/api/name-labels/done"); msg(msgId, `${r.erledigt} Box(en) als beschriftet markiert.`); loadNames(); }
+    catch (e) { msg(msgId, e.message, false); }
+  };
+  pollQueue(token);
+}
+async function pollQueue(token) {
+  const start = Date.now();
+  let seen = false, empty = 0, fehler = "";
+  const show = (text, cls = "muted") => { const b = $("#pk-queue"); if (b) { b.className = cls; b.textContent = text; } };
+  while (PK && PK.token === token) {
+    let q;
+    try { q = await call("GET", "/api/druck/warteschlange"); } catch (e) { q = {unterstuetzt: false}; }
+    if (!PK || PK.token !== token) return;
+    if (!q.unterstuetzt) { show("Druckerstatus nicht abfragbar – bitte die Labels selbst prüfen."); return; }
+    if (q.auftraege) {
+      seen = true; empty = 0;
+      if (q.fehler) {
+        fehler = q.fehler;
+        show(`Drucker meldet: ${q.fehler}. Rolle bzw. Drucker prüfen und den hängenden Auftrag in der Windows-Druckwarteschlange `
+           + `löschen – sonst kommt er nach dem Rollenwechsel evtl. noch einmal. Danach fehlende Labels ankreuzen und nachdrucken.`, "warn");
+      } else {
+        show("Drucker arbeitet …" + (q.seiten_gesamt ? ` (${q.seiten} von ${q.seiten_gesamt} übertragen)` : ""));
+      }
+    } else if (seen || ++empty >= 2) {
+      show(fehler ? `Auftrag ist nicht mehr in der Warteschlange – vorher meldete der Drucker: ${fehler}. Fehlende Labels ankreuzen und nachdrucken.`
+                  : "Drucker ist fertig. Kurz prüfen, ob alle Labels da sind.", fehler ? "warn" : "muted");
+      return;
+    }
+    if (Date.now() - start > QUEUE_MAX_MS) { show("Der Auftrag hängt seit 10 Minuten – bitte am Drucker prüfen.", "warn"); return; }
+    await new Promise(r => setTimeout(r, QUEUE_POLL_MS));
+  }
+}
+async function reprintMissing(art, ids, msgId) {
+  if (!ids.length) return;
+  const el = $("#printcheck");
+  el.hidden = true;                 // die Bestätigung erscheint an derselben Stelle
+  try {
+    const opts = await confirmPrint(art === "box" ? "box" : "nachdruck", ids, "Fehlende nachdrucken");
+    if (!opts) { el.hidden = !PK; return; }
+    const r = art === "box" ? await call("POST", "/api/name-labels/print", {...opts, ids})
+                            : await call("POST", "/api/content-labels/nachdruck", {ids, direkt: true, ...opts});
+    msg(msgId, `${r.labels.length} fehlende(s) Label(s) nachgedruckt: ${r.labels.map(l => l.name).join(", ")}`);
+    showPrintCheck(art, r.labels, opts.kopien, msgId);
+    if (art === "box") loadNames();
+  } catch (e) { msg(msgId, e.message, false); el.hidden = !PK; }
+}
+
 // ---------- Box-Labels
 async function loadNames() {
   try {
@@ -995,6 +1082,7 @@ document.querySelectorAll("[data-direct-names]").forEach(b => b.onclick = async 
     if (!opts) { msg(namesMsg(), "Druck nicht bestätigt – nichts gedruckt.", false); b.disabled = directDisabled(b); return; }
     const r = await call("POST", "/api/name-labels/print", opts);
     msg(namesMsg(), `${r.gedruckt} Box-Label(s) an den Drucker geschickt: ${r.boxen.join(", ")}\nWenn alle sauber rausgekommen sind: „Gedruckt ✓“.`);
+    showPrintCheck("box", r.labels, opts.kopien, namesMsg());
     loadNames();
   } catch (e) { msg(namesMsg(), e.message, false); }
   b.disabled = directDisabled(b);
@@ -1055,6 +1143,7 @@ $("#b-content-direct").onclick = async () => {
     const lines = r.gedruckt.map(g => `${g.vorlage}: ${g.labels} Label(s)`);
     if (r.uebersprungen.length) lines.push(`Ohne Vorlage übersprungen: ${r.uebersprungen.join(", ")}`);
     msg("#m-content", `Gedruckt:\n${lines.join("\n")}\nWenn alles passt: „Gedruckt – Tags entfernen“.`, !r.uebersprungen.length);
+    showPrintCheck("bauteile", r.labels, opts.kopien, "#m-content");
     $("#b-content-done").disabled = !r.bauteile;
   } catch (e) { msg("#m-content", e.message, false); }
   b.disabled = directDisabled(b);
@@ -1175,6 +1264,7 @@ async function reprint(direkt) {
       const lines = r.gedruckt.map(g => `${g.vorlage}: ${g.labels} Label(s)`);
       if (r.uebersprungen.length) lines.push(`Ohne Vorlage übersprungen: ${r.uebersprungen.join(", ")}`);
       msg("#m-reprint", `Nachgedruckt:\n${lines.join("\n")}`, !r.uebersprungen.length);
+      showPrintCheck("nachdruck", r.labels, opts.kopien, "#m-reprint");
       $("#reprint-files").innerHTML = "";
     } else {
       msg("#m-reprint", `${r.labels} Label(s) in ${r.dateien.length} Datei(en) geschrieben – Vorlage öffnen und alle Datensätze drucken.`);

@@ -44,8 +44,8 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from . import __version__, bpac
 from . import routes_helfer_download as downloads
-from .desktop import (MAX_FILE, LocalDesktop, default_printer, lbx_ok, printer_state, require_online,
-                      sha256, valid_name, write_atomic)
+from .desktop import (MAX_FILE, LocalDesktop, default_printer, lbx_ok, print_queue, printer_state,
+                      require_online, sha256, valid_name, write_atomic)
 from .ptouch import TemplateError
 
 log = logging.getLogger("labeltool.helfer_server")
@@ -77,7 +77,7 @@ UPD_NOT_INSTALLED = ("Der Helfer läuft ohne Installation (Python-/ZIP-Paket) �
                      "installierten Helfer. Bitte den Installer verwenden (Einstellungen > Druck-Helfer).")
 OLD_HELPER = "Der Druck-Helfer ist veraltet (kein Vorlagen-Abgleich) – neue Version unter Einstellungen > Helfer laden."
 INFO_KEYS = ("rechner", "version", "bpac", "bpac_grund", "drucker_liste", "drucker", "drucker_status",
-             "protokoll", "drucker_modell", "vorlagen_ordner", "installiert", "sammeldruck")
+             "protokoll", "drucker_modell", "vorlagen_ordner", "installiert", "sammeldruck", "warteschlange")
 _VERSION_NUM = re.compile(r"(\d+)\.(\d+)\.(\d+)")
 _SHA_RE = re.compile(r"[0-9a-f]{64}")
 
@@ -871,6 +871,12 @@ class HelperPrinter:
                                     [(t, {"zeilen": r}) for t, r in jobs], TIMEOUT_PRINT)
         return int(daten.get("gedruckt", sum(len(r) for _, r in jobs)))
 
+    def queue(self, printer: str) -> dict | None:
+        """Windows-Warteschlange auf dem Helfer-PC; None bei älteren Helfern."""
+        if not self.hub.info().get("warteschlange"):
+            return None
+        return self.hub.call("warteschlange", {"drucker": printer or ""}, TIMEOUT_DESKTOP) or None
+
 
 def _file_spec(path: Path) -> dict:
     """CSV als {"name", "inhalt": base64} – der Helfer legt sie lokal ab (keine Server-Pfade nötig)."""
@@ -943,8 +949,8 @@ class LocalPrinter:
     (er bliebe sonst in der Windows-Warteschlange und käme beim nächsten Einschalten heraus)."""
     BpacError = bpac.BpacError
 
-    def __init__(self, module=bpac, state_fn=printer_state):
-        self.module, self.state_fn = module, state_fn
+    def __init__(self, module=bpac, state_fn=printer_state, queue_fn=print_queue):
+        self.module, self.state_fn, self.queue_fn = module, state_fn, queue_fn
         self._cache: dict[str, tuple[float, dict]] = {}
         self._lock = threading.Lock()
 
@@ -998,6 +1004,15 @@ class LocalPrinter:
         require_online(name, self.state_fn)
         return batch(jobs, printer, flags)
 
+    def queue(self, printer: str) -> dict | None:
+        name = printer
+        if not name:
+            try:
+                name = default_printer(self.module.status("").get("drucker") or [])
+            except Exception:
+                name = None
+        return self.queue_fn(name)
+
 
 class ModePrinter:
     """Wählt bei jedem Aufruf je nach cfg.print_mode lokal oder Helfer."""
@@ -1027,6 +1042,9 @@ class ModePrinter:
 
     def print_batch(self, jobs, printer, flags):
         return self.current().print_batch(jobs, printer, flags)
+
+    def queue(self, printer):
+        return self.current().queue(printer)
 
 
 class ModeDesktop:

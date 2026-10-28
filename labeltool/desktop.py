@@ -209,6 +209,56 @@ def _win32_state(name: str) -> dict | None:
     return {"online": not offline, "fehler": blocked, "text": ", ".join(texts), "auftraege": int(info.get("cJobs") or 0)}
 
 
+# win32print: JOB_INFO_1.Status – Bits, bei denen der Auftrag nicht von selbst weiterläuft
+_JOB_ERRORS = [
+    (0x40, "Band leer oder fehlt"),          # JOB_STATUS_PAPEROUT
+    (0x400, "Benutzereingriff nötig"),       # JOB_STATUS_USER_INTERVENTION
+    (0x2, "Fehler"),                         # JOB_STATUS_ERROR
+    (0x20, "Drucker offline"),               # JOB_STATUS_OFFLINE
+    (0x200, "blockiert"),                    # JOB_STATUS_BLOCKED_DEVQ
+    (0x1, "angehalten"),                     # JOB_STATUS_PAUSED
+]
+
+
+def print_queue(name: str | None) -> dict | None:
+    """Windows-Warteschlange des Druckers nach dem Senden.
+
+    -> {"auftraege", "fehler": Text oder "", "seiten", "seiten_gesamt"}; None ohne win32print/Drucker.
+    seiten = an den Drucker übertragene Seiten (≈ Labels) – nicht zwingend schon ausgedruckt.
+    Fehler kommen aus dem Auftrag (z. B. „Band leer“) oder aus dem Druckerstatus.
+    """
+    if not name:
+        return None
+    try:
+        import win32print
+    except ImportError:
+        return None
+    try:
+        h = win32print.OpenPrinter(name)
+    except Exception:
+        return None
+    try:
+        jobs = win32print.EnumJobs(h, 0, 999, 1) or []
+    except Exception:
+        jobs = []
+    finally:
+        win32print.ClosePrinter(h)
+    errors, pages, total = [], 0, 0
+    for job in jobs:
+        status = int(job.get("Status") or 0)
+        texts = [t for bit, t in _JOB_ERRORS if status & bit]
+        driver = str(job.get("pStatus") or "").strip()     # Text des Brother-Treibers, falls vorhanden
+        if driver:
+            texts.append(driver)
+        errors += [t for t in texts if t not in errors]
+        pages += int(job.get("PagesPrinted") or 0)
+        total += int(job.get("TotalPages") or 0)
+    win = _win32_state(name) or {}
+    if jobs and win.get("fehler") and win.get("text") and win["text"] not in errors:
+        errors.append(win["text"])
+    return {"auftraege": len(jobs), "fehler": ", ".join(errors), "seiten": pages, "seiten_gesamt": total}
+
+
 def _bpac_online(name: str) -> bool | None:
     """b-PAC Printer.IsPrinterOnline(name) im b-PAC-Thread; None, wenn b-PAC fehlt oder belegt ist."""
     return _bpac_info(name)[0]

@@ -57,8 +57,8 @@ from pathlib import Path, PureWindowsPath
 import yaml
 
 from . import __version__, bpac
-from .desktop import (MAX_FILE, LocalDesktop, backup_once, default_printer, lbx_ok, printer_state,
-                      require_online, sha256, valid_name, write_atomic)
+from .desktop import (MAX_FILE, LocalDesktop, backup_once, default_printer, lbx_ok, print_queue,
+                      printer_state, require_online, sha256, valid_name, write_atomic)
 from .ptouch import TemplateError, open_file
 
 log = logging.getLogger("labeltool.helfer")
@@ -73,6 +73,7 @@ CACHE_KEEP = 200             # so viele Vorlagenfassungen bleiben im Cache
 STABLE_AGE = 2.0             # s – jüngere Dateien schreibt der P-touch Editor evtl. noch
 UNREADY = "wird gerade gespeichert – nächster Versuch gleich"
 FILE_JOBS = ("datei", "vorlage_speichern")    # Dateiarbeit: eigener Thread, blockiert Vorschau/Druck nicht
+QUEUE_JOB = "warteschlange"                     # eigener Thread: läuft während b-PAC noch beschäftigt ist
 UPDATE_JOB = "aktualisieren"                    # eigener Thread: Download + Administratorabfrage dauern
 UPDATE_ORDNER = "Labeltool-Helfer-Update"       # in %TEMP%
 UPDATE_PARAMETER = "/SILENT /SUPPRESSMSGBOXES /NORESTART /UPDATE"
@@ -699,8 +700,10 @@ class HelferKern:
 
     def __init__(self, cfg: HelferConfig, printer=bpac, desktop=None, state_fn=printer_state,
                  opener=open_file, hostname: str | None = None, installiert: bool | None = None,
-                 starter=None, update_dir: Path | None = None, pro_benutzer=None):
+                 starter=None, update_dir: Path | None = None, pro_benutzer=None, queue_fn=print_queue):
         self.cfg = cfg
+        self.queue_fn = queue_fn
+        self.letzter_drucker = ""                # Drucker des letzten Auftrags (für die Warteschlange)
         self.installiert = gepackt() if installiert is None else bool(installiert)
         self.starter = starter or setup_ausfuehren   # (datei, parameter, erhoeht) – im Test eine Attrappe
         self.update_dir = Path(update_dir) if update_dir else None
@@ -745,7 +748,7 @@ class HelferKern:
                 s = {"angeschlossen": None, "status_text": f"Status nicht lesbar: {e}"}
             states[name] = {"angeschlossen": s.get("angeschlossen"), "status_text": s.get("status_text", ""),
                             "band": s.get("band")}
-        return {"protokoll": PROTOKOLL, "sammeldruck": True, "rechner": self.hostname, "version": __version__,
+        return {"protokoll": PROTOKOLL, "sammeldruck": True, "warteschlange": True, "rechner": self.hostname, "version": __version__,
                 "installiert": self.installiert, "bpac": avail,
                 "bpac_grund": "" if avail else (st.get("grund") or "b-PAC nicht verfügbar"),
                 "drucker_liste": names, "drucker": self.printer_name(names), "drucker_status": states,
@@ -927,7 +930,15 @@ class HelferKern:
         if not check:   # Drucker aus der Vorlage – b-PAC nimmt dann den (einzigen) P-touch
             check = default_printer(names if names is not None else self.printer.status("").get("drucker") or [])
         require_online(check, self.state_fn)
+        self.letzter_drucker = check or ""
         return name
+
+    def _job_warteschlange(self, msg: dict) -> dict:
+        """Windows-Warteschlange des Druckers – nach dem Senden, um Fehler wie „Band leer“ zu sehen."""
+        name = str(msg.get("drucker") or "") or self.cfg.drucker or self.letzter_drucker
+        if not name:
+            name = self.printer_name(self.printer.status("").get("drucker") or [])
+        return self.queue_fn(name) or {}
 
     def _job_drucken(self, msg: dict) -> dict:
         path = self.cache.get(msg.get("vorlage"))
@@ -941,6 +952,7 @@ class HelferKern:
         if not check:   # Drucker aus der Vorlage – b-PAC nimmt dann den (einzigen) P-touch
             check = default_printer(names if names is not None else self.printer.status("").get("drucker") or [])
         require_online(check, self.state_fn)
+        self.letzter_drucker = check or ""
         log.info("Drucke %d Label(s) mit %s auf %s …", len(rows), path.name, name or check or "Drucker aus der Vorlage")
         n = self.printer.print_labels(path, rows, name, int(msg.get("flags") or 0))
         log.info("Gedruckt: %d Label(s).", n)
@@ -1057,6 +1069,7 @@ async def _session(ws, kern: HelferKern, cfg: HelferConfig) -> None:
     files = ThreadPoolExecutor(1, thread_name_prefix="abgleich")   # Dateiarbeit, unabhängig von b-PAC
     probe = ThreadPoolExecutor(1, thread_name_prefix="status")
     upd = ThreadPoolExecutor(1, thread_name_prefix="update")       # Download + Administratorabfrage
+    spool = ThreadPoolExecutor(1, thread_name_prefix="warteschlange")
     send_lock = asyncio.Lock()
     sync_now = asyncio.Event()
 
@@ -1108,7 +1121,7 @@ async def _session(ws, kern: HelferKern, cfg: HelferConfig) -> None:
 
     async def run_job(msg: dict) -> None:
         typ = msg.get("typ")
-        pool = upd if typ == UPDATE_JOB else files if typ in FILE_JOBS else jobs
+        pool = upd if typ == UPDATE_JOB else files if typ in FILE_JOBS else spool if typ == QUEUE_JOB else jobs
         answer = await loop.run_in_executor(pool, kern.handle, msg)
         if answer is not None:
             await send(answer)
@@ -1138,7 +1151,7 @@ async def _session(ws, kern: HelferKern, cfg: HelferConfig) -> None:
         kern.on_change = None
         for t in background + list(tasks):
             t.cancel()
-        for pool in (jobs, files, probe, upd):
+        for pool in (jobs, files, probe, upd, spool):
             pool.shutdown(wait=False, cancel_futures=True)
 
 

@@ -63,6 +63,10 @@ class PrintOptions(BaseModel):
     band_gewechselt: bool = False                    # Nutzer hat den Rollenwechsel bestätigt
 
 
+class NamePrint(PrintOptions):
+    ids: list[int] | None = None                    # nur diese Boxen der Warteschlange (Nachdruck fehlender)
+
+
 class Reprint(PrintOptions):
     ids: list[int] = Field(min_length=1, max_length=200)   # Lagerort-IDs der Boxen
     direkt: bool = False                                    # True = Direktdruck, sonst CSV schreiben
@@ -70,7 +74,7 @@ class Reprint(PrintOptions):
 
 class PrintCheck(BaseModel):
     art: str                                # "box" | "bauteile" | "nachdruck"
-    ids: list[int] = []                     # nur für "nachdruck"
+    ids: list[int] = []                     # "nachdruck"; bei "box" optional: nur diese Boxen
 
 
 def copies(rows: list[dict], n: int) -> list[dict]:
@@ -577,22 +581,30 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
         return result
 
     @app.post("/api/name-labels/print")
-    def print_names(opts: PrintOptions | None = None):
-        opts = opts or PrintOptions()
+    def print_names(opts: NamePrint | None = None):
+        opts = opts or NamePrint()
         flags = require_direct_print()
         if not cfg.box_template:
             raise HTTPException(400, "Keine Box-Label-Vorlage (labels.box_vorlage) eingetragen.")
         with api() as c:
             boxes = load_boxes(c)
-        selected = [boxes[i] for i in state.data["name_queue"] if i in boxes]
+        queue = state.data["name_queue"]
+        if opts.ids is not None:
+            queue = [i for i in queue if i in set(opts.ids)]
+        selected = [boxes[i] for i in queue if i in boxes]
         if not selected:
-            raise HTTPException(400, "Keine Boxen in der Warteschlange.")
+            raise HTTPException(400, "Keine Boxen in der Warteschlange." if opts.ids is None
+                                else "Die gewählten Boxen sind nicht (mehr) in der Warteschlange.")
         if not opts.band_gewechselt:
             check_tape([cfg.box_template])
         n = printer.print_labels(cfg.template_dir / cfg.box_template,
                                  copies(name_label_rows(selected), opts.kopien), cfg.printer, flags)
-        state.set("last_name_export", [b.id for b in selected])
-        return {"gedruckt": n, "boxen": [b.name for b in selected]}
+        ids = [b.id for b in selected]
+        if opts.ids is not None:     # Nachdruck fehlender: „Gedruckt ✓“ gilt weiter für den ganzen Druck
+            ids = list(dict.fromkeys(state.data["last_name_export"] + ids))
+        state.set("last_name_export", ids)
+        return {"gedruckt": n, "boxen": [b.name for b in selected],
+                "labels": [{"id": b.id, "name": b.name} for b in selected]}
 
     @app.post("/api/druck/pruefen")
     def print_check(req: PrintCheck):
@@ -600,7 +612,10 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
         if req.art == "box":
             if not cfg.box_template:
                 raise HTTPException(400, "Keine Box-Label-Vorlage (labels.box_vorlage) eingetragen.")
-            labels, templates, ohne = len(state.data["name_queue"]), [cfg.box_template], []
+            queue = state.data["name_queue"]
+            if req.ids:
+                queue = [i for i in queue if i in set(req.ids)]
+            labels, templates, ohne = len(queue), [cfg.box_template], []
         elif req.art in ("bauteile", "nachdruck"):
             if req.art == "bauteile":
                 labs = _content_labels()
@@ -616,6 +631,21 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
         else:
             raise HTTPException(400, f"Unbekannte Druckart '{req.art}'.")
         return dict(tape_info(templates), labels=labels, ohne_vorlage=ohne)
+
+    @app.get("/api/druck/warteschlange")
+    def print_queue_status():
+        """Windows-Warteschlange nach dem Direktdruck: läuft der Auftrag noch, meldet der Drucker einen Fehler
+        (z. B. Band leer)? unterstuetzt=False, wenn das nicht abfragbar ist (kein Windows, alter Helfer)."""
+        if not cfg.direct_print:
+            return {"unterstuetzt": False}
+        queue = getattr(printer, "queue", None)
+        if queue is None:
+            return {"unterstuetzt": False}
+        try:
+            q = queue(cfg.printer)
+        except Exception as e:      # Helfer weg o. Ä. – die Druckkontrolle zeigt das nur an
+            return {"unterstuetzt": False, "grund": str(e)}
+        return dict(q, unterstuetzt=True) if q else {"unterstuetzt": False}
 
     @app.post("/api/name-labels/done")
     def names_done():
@@ -683,6 +713,10 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
                 done.extend(by_template[lbx])
         return printed, skipped, done
 
+    def label_list(done) -> list[dict]:
+        """Gedruckte Bauteil-Labels für die Druckkontrolle – Nachdruck fehlender über die Box-ID."""
+        return [{"id": l.box.id, "name": l.box.name} for l in done]
+
     @app.get("/api/content-labels")
     def content_preview():
         return [_label_dict(l) for l in _content_labels()]
@@ -717,8 +751,8 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
             raise HTTPException(404, f"Box(en) nicht (mehr) in Part-DB: {', '.join(map(str, missing))}")
         labels = [make_content_label(cfg, boxes[i], by_location.get(i, [])) for i in dict.fromkeys(req.ids)]
         if req.direkt:
-            printed, skipped, _ = _print_content(labels, flags, req.kopien, req.band_gewechselt)
-            return {"gedruckt": printed, "uebersprungen": skipped}
+            printed, skipped, done = _print_content(labels, flags, req.kopien, req.band_gewechselt)
+            return {"gedruckt": printed, "uebersprungen": skipped, "labels": label_list(done)}
         return {"dateien": export_content_labels(labels, cfg), "labels": len(labels)}
 
     @app.post("/api/content-labels/export")
@@ -742,7 +776,7 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
         part_ids = {pid for l in done for pid in l.tagged_part_ids}
         # Tags werden erst nach "Gedruckt – Tags entfernen" entfernt, nur für tatsächlich gedruckte Labels
         state.set("last_content_export", sorted(part_ids))
-        return {"gedruckt": printed, "uebersprungen": skipped, "bauteile": len(part_ids)}
+        return {"gedruckt": printed, "uebersprungen": skipped, "bauteile": len(part_ids), "labels": label_list(done)}
 
     @app.post("/api/content-labels/done")
     def content_done():

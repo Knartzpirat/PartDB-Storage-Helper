@@ -16,7 +16,7 @@ class State:
     def __init__(self, path: Path):
         self.path = Path(path)
         self._lock = threading.Lock()
-        self.data = dict(_DEFAULT)
+        self.data = {k: list(v) for k, v in _DEFAULT.items()}   # eigene Listen – queue_names ändert sie
         if self.path.exists():
             try:
                 self.data.update(json.loads(self.path.read_text(encoding="utf-8")))
