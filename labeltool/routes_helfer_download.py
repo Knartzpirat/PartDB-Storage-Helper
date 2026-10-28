@@ -1,6 +1,16 @@
-"""Download des Windows-Druck-Helfers als ZIP (GET /api/helfer/download).
+"""Download des Windows-Druck-Helfers.
+
+  GET /api/helfer/installer        Labeltool-Helfer-Installer.zip: Setup-Programm + helfer.vorgabe.yaml + LIESMICH.txt
+  GET /api/helfer/installer/info   {"installer_verfuegbar": bool, ...} – ob die Setup-Datei auf dem Server liegt
+  GET /api/helfer/download         Labeltool-Helfer.zip: Python-Variante ohne Installation (siehe unten)
 
 Einbinden in create_app:  routes_helfer_download.register(app, cfg, app.state.hooks)
+
+Die Setup-Datei baut die CI (PyInstaller + Inno Setup) und legt sie ins Image unter
+/app/helfer-installer/Labeltool-Helfer-Setup.exe; anderer Ort per Umgebungsvariable LABELTOOL_INSTALLER.
+Ohne Variable wird lokal zusätzlich installer/dist/Labeltool-Helfer-Setup.exe im Projekt gesucht.
+
+Python-Variante:
 
 Das Paket enthält nur, was der Helfer unter Windows braucht (kein fastapi/uvicorn):
   labeltool/…            Module, die helfer.py, helfer_setup.py und ptouch_modelle.py importieren
@@ -16,13 +26,16 @@ from __future__ import annotations
 import ast
 import io
 import json
+import os
+import tempfile
 import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
+from starlette.background import BackgroundTask
 
 from . import __version__
 from . import einstellungen as es
@@ -115,7 +128,7 @@ def server_url(request: Request) -> str:
 
 def vorgabe_yaml(server: str, token: str) -> str:
     return (
-        "# Vorgaben für den Einrichtungs-Assistenten (helfer.bat) – aus dem Labeltool heruntergeladen\n"
+        "# Vorgaben für den Einrichtungs-Assistenten (Setup bzw. helfer.bat) – aus dem Labeltool heruntergeladen\n"
         f"# am {datetime.now():%d.%m.%Y %H:%M}. Der Assistent schreibt daraus helfer.yaml.\n"
         "# Der Token ist geheim: Datei nicht weitergeben.\n"
         f"server: {json.dumps(server)}\n"
@@ -203,7 +216,147 @@ def helfer_token(cfg: Config) -> str:
     return cfg.helper_token
 
 
+# ------------------------------------------------------------------ Installer (Setup-Programm)
+INSTALLER_ENV = "LABELTOOL_INSTALLER"
+SETUP_NAME = "Labeltool-Helfer-Setup.exe"
+INSTALLER_STANDARD = Path("/app/helfer-installer") / SETUP_NAME
+INSTALLER_ZIP_NAME = "Labeltool-Helfer-Installer.zip"
+INSTALLER_FEHLT = ("Der Windows-Installer liegt auf diesem Server nicht vor (z. B. selbst gebautes Image ohne "
+                   "Installer). Bitte die Alternative ohne Installation nutzen: „Helfer als Python-Paket "
+                   "herunterladen“ – oder den Installer als Release-Asset von GitHub laden.")
+
+LIESMICH_INSTALLER = """\
+Labeltool Druck-Helfer für Windows – Installer (Server-Version {version})
+=========================================================================
+
+Der Druck-Helfer verbindet diesen PC mit dem Labeltool-Server ({server}).
+Er druckt über b-PAC auf den Brother-Etikettendrucker, zeigt die exakte Vorschau,
+öffnet Vorlagen im P-touch Editor und hält den Vorlagen-Ordner auf diesem PC mit
+dem Server abgeglichen. Am PC muss kein Port geöffnet werden. Python wird nicht
+benötigt – das Setup bringt alles mit.
+
+Voraussetzungen
+---------------
+- Windows 10 oder 11 (64 bit)
+- Brother P-touch Editor und der Druckertreiber für dein Modell
+- Brother b-PAC Client Component (64 bit) für Direktdruck und Vorschau:
+  https://support.brother.com/g/s/es/dev/en/bpac/download/index.html
+
+Installieren
+------------
+1. Diese ZIP-Datei vollständig entpacken (Rechtsklick > "Alle extrahieren ...").
+   Wichtig: Labeltool-Helfer-Setup.exe und helfer.vorgabe.yaml müssen im selben
+   Ordner liegen – das Setup nicht direkt aus dem ZIP heraus starten, sonst fehlen
+   Server-Adresse und Token im Assistenten.
+2. Labeltool-Helfer-Setup.exe doppelklicken.
+   - Windows SmartScreen meldet "Der Computer wurde durch Windows geschützt", weil das
+     Setup nicht digital signiert ist: auf "Weitere Informationen" klicken, dann auf
+     "Trotzdem ausführen".
+   - Die Benutzerkontensteuerung (UAC) fragt nach Administratorrechten, weil das
+     Programm nach C:\\Program Files\\Labeltool-Helfer installiert wird: "Ja".
+3. Im Setup die Aufgaben wählen (Autostart bei der Windows-Anmeldung ist
+   voreingestellt) und installieren. Das Setup legt im Startmenü die Einträge
+   "Labeltool Druck-Helfer", "Druck-Helfer einrichten" und "Deinstallieren" an.
+4. Am Ende öffnet sich der Einrichtungs-Assistent:
+   - Server-Adresse und Helfer-Token sind schon eingetragen ("Verbindung testen")
+   - Vorlagen-Ordner: Ordner mit deinen .lbx-Vorlagen auf diesem PC. Er ist die
+     Quelle der Vorlagen – der Server übernimmt neue/geänderte Dateien von hier.
+   - Druckermodell: installierte Drucker stehen oben ("installiert")
+   "Speichern & starten" – der Helfer läuft danach unsichtbar im Hintergrund. Im
+   Labeltool zeigt die Kopfzeile "Helfer: verbunden".
+
+Einstellungen und Protokoll
+---------------------------
+Alle Einstellungen liegen in %LOCALAPPDATA%\\Labeltool-Helfer\\
+(helfer.yaml, Zwischenspeicher, Protokoll helfer.log). Ändern: Startmenü >
+"Druck-Helfer einrichten". Neuer Helfer-Token im Labeltool erzeugt? Den Installer
+neu herunterladen und erneut installieren – oder den Token im Assistenten eintragen.
+
+Update
+------
+Neues Setup herunterladen und einfach über die bestehende Installation
+installieren. Die Einstellungen bleiben erhalten.
+
+Deinstallieren
+--------------
+Windows-Einstellungen > Apps > Installierte Apps > "Labeltool Druck-Helfer" >
+Deinstallieren (oder Startmenü > "Deinstallieren"). Programm, Startmenü-Einträge
+und Autostart werden entfernt; die Einstellungen in %LOCALAPPDATA%\\Labeltool-Helfer\\
+kannst du danach von Hand löschen.
+"""
+
+
+def installer_pfad() -> Path | None:
+    """Setup-Datei auf dem Server oder None.
+
+    Ist LABELTOOL_INSTALLER gesetzt, gilt nur dieser Pfad. Sonst der Ort im Docker-Image und lokal
+    installer/dist/ im Projekt (Ergebnis von installer/build.ps1).
+    """
+    env = os.environ.get(INSTALLER_ENV, "").strip()
+    kandidaten = [Path(env)] if env else [INSTALLER_STANDARD, PROJEKT_DIR / "installer" / "dist" / SETUP_NAME]
+    for p in kandidaten:
+        try:
+            if p.is_file() and p.stat().st_size > 0:
+                return p
+        except OSError:
+            continue
+    return None
+
+
+def installer_info(cfg: Config | None = None) -> dict:
+    """Für /api/meta bzw. /api/helfer/installer/info. Erzeugt keinen Token und liest die Datei nicht."""
+    p = installer_pfad()
+    if p is None:
+        return {"installer_verfuegbar": False}
+    st = p.stat()
+    return {"installer_verfuegbar": True, "installer_groesse": st.st_size,
+            "installer_stand": datetime.fromtimestamp(st.st_mtime).isoformat(timespec="seconds")}
+
+
+def baue_installer_zip(ziel, setup: Path, server: str, token: str) -> None:
+    """Schreibt das Installer-ZIP nach `ziel` (Pfad oder Datei-Objekt).
+
+    Die Setup-Datei wird blockweise kopiert (nicht komplett in den Speicher geladen) und nur gespeichert,
+    nicht komprimiert – sie ist bereits komprimiert.
+    """
+    with zipfile.ZipFile(ziel, "w", zipfile.ZIP_DEFLATED) as z:
+        z.write(setup, SETUP_NAME, compress_type=zipfile.ZIP_STORED)
+        z.writestr("helfer.vorgabe.yaml", _crlf(vorgabe_yaml(server, token)))
+        z.writestr("LIESMICH.txt", _crlf(LIESMICH_INSTALLER.format(version=__version__, server=server)))
+
+
+def _loeschen(path: str) -> None:
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
 def register(app: FastAPI, cfg: Config, hooks: Any = None) -> None:
+    @app.get("/api/helfer/installer/info")
+    def installer_status():
+        return installer_info(cfg)
+
+    @app.get("/api/helfer/installer")
+    def installer_download(request: Request):
+        setup = installer_pfad()
+        if setup is None:
+            raise HTTPException(404, INSTALLER_FEHLT)
+        # ZIP in eine temporäre Datei schreiben (Content-Length für die Fortschrittsanzeige, kein
+        # zweites Exemplar im Speicher); nach dem Senden wird sie gelöscht.
+        fd, tmp = tempfile.mkstemp(prefix="labeltool-installer-", suffix=".zip")
+        try:
+            with os.fdopen(fd, "wb") as f:
+                baue_installer_zip(f, setup, server_url(request), helfer_token(cfg))
+        except OSError as e:
+            _loeschen(tmp)
+            raise HTTPException(500, f"Installer-Paket konnte nicht gebaut werden: {e}")
+        except BaseException:
+            _loeschen(tmp)
+            raise
+        return FileResponse(tmp, media_type="application/zip", filename=INSTALLER_ZIP_NAME,
+                            headers={"Cache-Control": "no-store"}, background=BackgroundTask(_loeschen, tmp))
+
     @app.get("/api/helfer/download")
     def helper_download(request: Request):
         try:
