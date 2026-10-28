@@ -52,7 +52,7 @@ import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import yaml
 
@@ -378,8 +378,12 @@ def _folder(raw, base: Path) -> Path | None:
 def _template_folder(raw, base: Path) -> Path | None:
     """Vorlagen-Ordner; Netzlaufwerk-Buchstaben werden zum UNC-Pfad (sonst evtl. "Pfad nicht gefunden")."""
     from .desktop import unc_path
-    folder = _folder(raw, base)
-    return Path(unc_path(folder)) if folder else None
+    # erst übersetzen, dann auflösen: "Z:\…" ist nur unter Windows ein absoluter Pfad
+    text = unc_path(os.path.expandvars(os.path.expanduser(str(raw or "").strip())))
+    if not text:
+        return None
+    folder = Path(text)
+    return folder if folder.is_absolute() or PureWindowsPath(text).is_absolute() else base / folder
 
 
 def load_helper_config(path: str | Path) -> HelferConfig:
