@@ -362,6 +362,8 @@
         <legend class="muted" style="padding:0;margin-bottom:6px">Schnittoptionen beim Direktdruck</legend>
         <div class="checks" id="s-cuts"></div>
       </fieldset>
+      <div class="row"><label class="check"><input type="checkbox" id="s-csv-dl"> Geschriebene CSV-Dateien automatisch herunterladen
+        <span class="muted">(gilt für diesen Browser)</span></label></div>
       <div class="row"><button type="submit" class="btn primary" id="s-pr-save">Speichern</button></div>
       <div class="msg" id="m-set-druck"></div>
     </form>
@@ -695,6 +697,7 @@ document.querySelectorAll("[data-print-names]").forEach(b => b.onclick = async (
     const tpl = r.vorlage ? `P-touch Editor wird geöffnet – dort alle ${r.labels} Datensätze drucken.`
                           : `Vorlage nicht geöffnet: ${r.vorlage_fehler}\nCSV: ${r.datei}`;
     msg(namesMsg(), `${r.labels} Box-Label(s): ${r.boxen.join(", ")}\n${tpl}`, !!r.vorlage);
+    downloadCsv([r.datei]);
     loadNames();
   } catch (e) { msg(namesMsg(), e.message, false); }
 });
@@ -740,6 +743,7 @@ $("#b-content-export").onclick = async () => {
     const r = await call("POST", "/api/content-labels/export");
     msg("#m-content", `${r.bauteile} Bauteile in ${r.dateien.length} Datei(en) geschrieben. Vorlage öffnen, alle Datensätze drucken, dann „Gedruckt – Tags entfernen“.`);
     $("#content-files").innerHTML = csvFilesTable(r.dateien);
+    downloadCsv(r.dateien.map(d => d.datei));
     $("#b-content-done").disabled = false; applyGates();
   } catch (e) { msg("#m-content", e.message, false); }
 };
@@ -763,6 +767,23 @@ $("#b-content-done").onclick = async () => {
     loadContent();
   } catch (e) { msg("#m-content", e.message, false); }
 };
+
+// Automatischer CSV-Download nach dem Schreiben (abschaltbar, gespeichert pro Browser)
+function csvAutoDownload() {
+  try { return localStorage.getItem("csv-download") !== "aus"; } catch (e) { return true; }
+}
+function downloadCsv(pfade) {
+  const names = [...new Set((pfade || []).filter(Boolean).map(fname))];
+  if (!names.length || !csvAutoDownload()) return;
+  const a = document.createElement("a");
+  a.href = "/api/ausgabe/download?" + names.map(n => "datei=" + encodeURIComponent(n)).join("&");
+  a.download = "";              // Dateiname kommt vom Server (CSV bzw. ZIP bei mehreren)
+  document.body.appendChild(a); a.click(); a.remove();
+}
+$("#s-csv-dl").checked = csvAutoDownload();
+$("#s-csv-dl").addEventListener("change", e => {
+  try { localStorage.setItem("csv-download", e.target.checked ? "an" : "aus"); } catch (err) { /* privat */ }
+});
 
 function csvFilesTable(dateien) {
   return `<table style="margin-top:12px"><thead><tr><th>CSV</th><th>Labels</th><th>Lagerart</th><th></th></tr></thead><tbody>`
@@ -832,6 +853,7 @@ async function reprint(direkt) {
     } else {
       msg("#m-reprint", `${r.labels} Label(s) in ${r.dateien.length} Datei(en) geschrieben – Vorlage öffnen und alle Datensätze drucken.`);
       $("#reprint-files").innerHTML = csvFilesTable(r.dateien);
+      downloadCsv(r.dateien.map(d => d.datei));
     }
     REPRINT.sel.clear(); renderReprint();
   } catch (e) { msg("#m-reprint", e.message, false); }

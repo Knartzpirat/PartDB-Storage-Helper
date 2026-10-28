@@ -1,11 +1,14 @@
 """FastAPI-Server mit kleiner Web-Oberfläche (lokal unter Windows oder im Docker mit Druck-Helfer)."""
 from __future__ import annotations
 
+import io
+import zipfile
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
@@ -198,6 +201,29 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
             "installer_verfuegbar": routes_helfer_download.installer_info(cfg)["installer_verfuegbar"],
             "vorschau_dpi": cfg.preview_dpi,
         }
+
+    # Geschriebene CSVs zum Herunterladen: eine Datei direkt, mehrere als ZIP (Browser blocken sonst
+    # mehrere automatische Downloads). Nur *.csv direkt im Ausgabeordner – keine Pfade.
+    @app.get("/api/ausgabe/download")
+    def download_output(datei: list[str] = Query(...)):
+        files = []
+        for name in dict.fromkeys(datei):
+            if Path(name).name != name or not name.lower().endswith(".csv") or name.startswith("."):
+                raise HTTPException(400, f"Ungültiger Dateiname: {name}")
+            path = cfg.output_dir / name
+            if not path.is_file():
+                raise HTTPException(404, f"{name} gibt es im Ausgabeordner nicht (mehr).")
+            files.append(path)
+        if len(files) == 1:
+            return FileResponse(files[0], media_type="text/csv", filename=files[0].name,
+                                headers={"Cache-Control": "no-store"})
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            for path in files:
+                z.write(path, path.name)
+        name = f"Labels-{datetime.now():%Y%m%d-%H%M%S}.zip"
+        return Response(buf.getvalue(), media_type="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
 
     @app.post("/api/open-output")
     def open_output():

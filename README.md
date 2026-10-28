@@ -258,6 +258,10 @@ nachdrucken.
 Drucken (direkt oder über *CSVs schreiben* → *In P-touch öffnen*), dann *Gedruckt – Tags entfernen*. Entfernt wird der
 Tag nur bei den Teilen, die tatsächlich gedruckt wurden.
 
+**CSV-Dateien:** Das Tool schreibt sie in den Ausgabeordner (Docker: `/ausgabe`) und lädt sie zusätzlich automatisch
+im Browser herunter – eine Datei als CSV, mehrere zusammen als ZIP. Abschalten unter *Einstellungen → Druck*
+(gilt pro Browser).
+
 **Fächer:** Damit ein Teil in einem bestimmten Feld landet, in Part-DB beim Bauteil unter *Bearbeiten →
 Lagerbestände* in der **Beschreibung des Bestands** dieser Box die Fachnummer eintragen: nur die Zahl (`3`) oder
 `Fach 3` / `F3` (auch mit weiterem Text dahinter, z. B. `Fach 3 – oben`). Ersatzweise wird der Kommentar des
