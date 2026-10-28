@@ -148,3 +148,14 @@ def test_schriften_aus_echtem_ptouch_editor():
         pytest.skip("P-touch Editor 6 nicht installiert")
     fonts = ptouch_fonts.find_fonts()
     assert "PTC Dingbats3" in fonts and len(files) == len(set(files))
+
+
+def test_schnittoptionen_je_modell():
+    ac, chain, end, half = 0x1, 0x400, 0x4000000, 0x200
+    # PT-P710BT kennt kein "Schnitt am Ende" und keinen Halbschnitt -> werden entfernt, Rest bleibt
+    assert bpac.supported_cuts("Brother PT-P710BT") == {"autocut", "chainprint"}
+    assert bpac.flags_for_printer(ac | end | 0x2000000, "Brother PT-P710BT") == ac | 0x2000000
+    assert bpac.flags_for_printer(ac | chain | half, "Brother PT-P710BT") == ac | chain
+    # unbekannte Modelle bleiben unangetastet; ähnliche Namen nicht verwechseln
+    assert bpac.flags_for_printer(ac | end, "Brother PT-P750W") == ac | end
+    assert bpac.supported_cuts("Brother PT-P7000") is None and bpac.supported_cuts("") is None

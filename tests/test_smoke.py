@@ -247,7 +247,7 @@ def test_direktdruck(tmp_path):
     c.post("/api/boxes", json={"abbr": "MIC", "compartments": 2, "box_type": "WinBin2", "count": 2})
     r = c.post("/api/name-labels/print").json()
     assert r["gedruckt"] == 2 and prn.jobs[0][0] == "Layout_Lagerbox_PartDB.lbx"
-    assert prn.jobs[0][2] == 0x1 | 0x4000000          # autocut + cutatend
+    assert prn.jobs[0][2] == 0x1                       # Standard: nur Autocut
     assert c.post("/api/name-labels/done").json()["erledigt"] == 2
 
     r = c.post("/api/content-labels/print").json()

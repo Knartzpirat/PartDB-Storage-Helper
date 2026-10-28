@@ -1433,9 +1433,11 @@ async function createCopy(t, types) {
 
 // ---------- Einstellungen (/api/einstellungen)
 let SET = null;
-const CUT_LABELS = {autocut: "Nach jedem Label schneiden", cutatend: "Nach dem letzten Label schneiden",
-                    halfcut: "Halbschnitt", cutmark: "Schnittmarken drucken",
-                    chainprint: "Kettendruck (kein Vorschub am Ende)", tailcut: "Ende abschneiden"};
+const CUT_LABELS = {autocut: "Autocut – nach jedem Label schneiden",
+                    chainprint: "Kettendruck – spart den Vorlauf beim nächsten Druck (letztes Label bleibt bis dahin im Gerät)",
+                    cutatend: "Nach dem letzten Label schneiden (nicht bei PT-P700/P710BT/E500/D600)",
+                    halfcut: "Halbschnitt (nicht bei PT-P700/P710BT)", cutmark: "Schnittmarken drucken",
+                    tailcut: "Ende abschneiden"};
 const PD_STATUS = {online: "Verbunden", offline: "Nicht erreichbar", token_ungueltig: "Token ungültig",
                    nicht_konfiguriert: "Nicht eingerichtet"};
 const clearMsg = id => { $(id).className = "msg"; $(id).textContent = ""; };

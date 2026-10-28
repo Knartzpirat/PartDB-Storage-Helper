@@ -41,6 +41,38 @@ CUT_OPTIONS = {
     "cutatend": 0x4000000,   # nach dem letzten Label schneiden
 }
 
+# Erlaubte Schnittoptionen je Modellgruppe laut b-PAC-Hilfe ("Printout samples and cut option
+# combinations for each major device type"). Für diese Geräte gibt es weder "Schnitt am Ende" noch
+# Halbschnitt/Schnittmarke – nur Autocut, Kettendruck, beides oder keinen Schnitt.
+CUT_SUPPORT = {
+    ("PT-2430PC", "PT-2730", "PT-P700", "PT-P710BT", "PT-P715EBT", "PT-H500", "PT-E500", "PT-D600",
+     "PT-D610BT", "PT-E720BT"): {"autocut", "chainprint"},
+}
+_ALL_CUT_BITS = 0
+for _v in CUT_OPTIONS.values():
+    _ALL_CUT_BITS |= _v
+
+
+def supported_cuts(printer_name: str) -> set[str] | None:
+    """Erlaubte Schnittoptionen für den Drucker (Name enthält das Modell) oder None = unbekannt."""
+    name = (printer_name or "").upper()
+    for models, cuts in CUT_SUPPORT.items():
+        if any(re.search(rf"(?<![A-Z0-9-]){re.escape(m)}(?![A-Z0-9])", name) for m in models):
+            return cuts
+    return None
+
+
+def flags_for_printer(flags: int, printer_name: str) -> int:
+    """Nicht unterstützte Schnitt-Bits entfernen – sonst verhält sich z. B. der PT-P710BT unerwartet."""
+    cuts = supported_cuts(printer_name)
+    if cuts is None:
+        return flags
+    allowed = 0
+    for key in cuts:
+        allowed |= CUT_OPTIONS[key]
+    return (flags & ~_ALL_CUT_BITS) | (flags & allowed)
+
+
 # Druckqualität (PrintOptionConstants aus der b-PAC-Typbibliothek): bpoHighResolution = 0x2000000
 # (z. B. PT-P710BT: 180 × 360 dpi statt 180 × 180), bpoQuality = 0x10000 (Qualität vor Tempo).
 # Modelle ohne hohe Auflösung drucken mit der Standardauflösung.
@@ -334,11 +366,19 @@ def print_labels(template: Path, rows: list[dict], printer: str, flags: int) -> 
                                     f"Installiert: {', '.join(installed) or 'keiner'}")
             if not rows:
                 return 0
+            try:
+                name = printer or str(doc.Printer.Name or "")
+            except Exception:
+                name = printer
+            flags = flags_for_printer(flags, name)
+            # Ein Druckauftrag für alle Labels: Optionen nur bei StartPrint – bei PrintOut ist der
+            # Parameter laut b-PAC-Hilfe ohne Wirkung und soll 0 sein.
             if not doc.StartPrint("", flags):
                 raise BpacError(f"Druckstart fehlgeschlagen (Fehler {doc.ErrorCode}).")
             for row in rows:
                 _fill(objects, mapping, row)
-                doc.PrintOut(1, flags)
+                if not doc.PrintOut(1, 0):
+                    raise BpacError(f"Label konnte nicht in den Druckauftrag (Fehler {doc.ErrorCode}).")
             if not _call(doc, "EndPrint"):
                 raise BpacError(f"Drucken fehlgeschlagen (Fehler {doc.ErrorCode}). Drucker an und Band eingelegt?")
         finally:

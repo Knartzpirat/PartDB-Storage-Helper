@@ -236,7 +236,7 @@ def test_vorschau_drucken_oeffnen(tmp_path):
         assert r.json()["gedruckt"] == 2
         name, rows, printer, flags = prn.jobs[-1]
         assert name == "Layout_Lagerbox_PartDB.lbx" and rows[0]["Lagername"] == "MIC-2.0021"
-        assert printer == DRUCKER and flags == 0x1 | 0x4000000
+        assert printer == DRUCKER and flags == 0x1                     # Standard: nur Autocut
 
         # In P-touch öffnen: CSV-Inhalt geht mit, der Helfer legt CSV + verknüpfte Kopie lokal ab
         ex = c.post("/api/name-labels/export", json={"open_template": True}).json()
