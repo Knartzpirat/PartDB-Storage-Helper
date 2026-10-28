@@ -457,3 +457,26 @@ def test_falsches_band_lehnt_server_ab(tmp_path):
         # 12-mm-Bauteil-Labels passen dagegen
         assert c.post("/api/content-labels/nachdruck", json={"ids": [203], "direkt": True}).status_code == 200
     assert [j[0] for j in prn.jobs] == ["PartDB_Window-Div-Bin-2.lbx"]
+
+
+def test_druck_pruefen_kopien_und_rollenwechsel(tmp_path):
+    """Vorab-Prüfung zeigt Band laut Vorlage/eingelegt; Kopien; nach bestätigtem Wechsel kein 409 vom Server."""
+    zwoelf = lambda name: {"name": name, "angeschlossen": True, "status_text": "bereit", "bereit": True, "band": "12 mm"}
+    c, cfg, kern, prn, opened = setup(tmp_path, state_fn=zwoelf)
+    with connected(c, kern):
+        c.post("/api/boxes", json={"abbr": "MIC", "compartments": 2, "box_type": "WinBin2", "count": 2})
+        info = c.post("/api/druck/pruefen", json={"art": "box"}).json()
+        assert info["labels"] == 2 and info["eingelegt"] == "12 mm" and info["passt"] is False
+        assert info["baender"] == [{"band_mm": 24, "vorlagen": ["Layout_Lagerbox_PartDB.lbx"]}]
+        info = c.post("/api/druck/pruefen", json={"art": "nachdruck", "ids": [203, 250]}).json()
+        assert info["passt"] is True and info["labels"] == 2 and info["baender"][0]["band_mm"] == 12
+        assert c.post("/api/druck/pruefen", json={"art": "fax"}).status_code == 400
+
+        assert c.post("/api/name-labels/print", json={"kopien": 2}).status_code == 409        # falsches Band
+        r = c.post("/api/name-labels/print", json={"kopien": 2, "band_gewechselt": True})       # Wechsel bestätigt
+        assert r.status_code == 200 and r.json()["gedruckt"] == 4
+        assert c.post("/api/name-labels/print", json={"kopien": 0}).status_code == 422
+        r = c.post("/api/content-labels/nachdruck", json={"ids": [203], "direkt": True, "kopien": 3})
+        assert r.json()["gedruckt"] == [{"vorlage": "PartDB_Window-Div-Bin-2.lbx", "labels": 3}]
+    box = [j for j in prn.jobs if j[0] == "Layout_Lagerbox_PartDB.lbx"][0]
+    assert [r["Lagername"] for r in box[1]] == ["MIC-2.0021", "MIC-2.0021", "MIC-2.0022", "MIC-2.0022"]   # Kopien direkt hintereinander

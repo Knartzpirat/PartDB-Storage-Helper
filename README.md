@@ -1,7 +1,7 @@
 # Part-DB Labeltool
 
 Webanwendung, mit der du Lagerboxen in [Part-DB](https://github.com/Part-DB/Part-DB-server) anlegst und dafür Etiketten
-auf einem Brother-P-touch-Drucker druckst – ein **Box-Label** (24 mm) für jede Box und ein **Bauteil-Label** (12 mm)
+auf einem Brother-P-touch-Drucker druckst – ein **Box-Label** (z. B. 24 mm) für jede Box und ein **Bauteil-Label** (z. B. 12 mm)
 mit den Bauteilen, die darin liegen. Die Layouts sind normale P-touch-Editor-Vorlagen (`.lbx`), die du selbst gestaltest.
 
 Entwickelt und getestet mit dem **Brother PT-P710BT**; andere P-touch-/QL-Modelle, die der P-touch Editor kennt,
@@ -243,10 +243,10 @@ Vorlagenordner legt `labels.vorlagen_ordner` in `config.yaml` fest.
 
 ## Arbeitsablauf
 
-| Label | Band | Vorlage | CSV |
+| Label | Band (aus der Vorlage) | Vorlage | CSV |
 |---|---|---|---|
-| Box-Label | 24 mm | `labels.box_vorlage`, z. B. `Layout_Lagerbox_PartDB.lbx` | `Namenslabels.csv` |
-| Bauteil-Label | 12 mm | je Lagerart, z. B. `PartDB_Window-Div-Bin-2.lbx` | `Inhalt_<Lagerart>.csv` |
+| Box-Label | z. B. 24 mm | `labels.box_vorlage`, z. B. `Layout_Lagerbox_PartDB.lbx` | `Namenslabels.csv` |
+| Bauteil-Label | z. B. 12 mm | je Lagerart, z. B. `PartDB_Window-Div-Bin-2.lbx` | `Inhalt_<Lagerart>.csv` |
 
 **Neue Boxen:** Reiter *Neue Box* → Inhalt und Lagerart wählen (die Abteile kommen aus der Lagerart), Anzahl
 angeben, *In Part-DB anlegen*. Alle neuen Boxen ohne Label stehen darunter; *Box-Labels drucken* (bzw. *Direkt
@@ -330,7 +330,14 @@ Beides läuft über die **Brother b-PAC Client Component**:
    Unterstützte Modelle: [Modellliste](https://support.brother.com/g/s/es/dev/en/bpac/environment/index.html).
 2. Drucker per USB anschließen; er muss in Windows unter *Drucker & Scanner* erscheinen.
 3. In der Oberfläche unter *Einstellungen → Druck* Direktdruck einschalten und Schnittoptionen wählen
-   (z. B. `autocut`, `cutatend`).
+   (z. B. `autocut`, beim PT-P710BT zusätzlich `chainprint`; nicht unterstützte Optionen lässt das Tool weg).
+
+**Vor jedem Direktdruck** erscheint eine Bestätigung mit Anzahl der Labels, dem Band laut Vorlage und dem eingelegten
+Band (das meldet der Drucker über b-PAC). Dort lässt sich die Zahl der **Kopien je Label** einstellen. Ohne Bestätigung
+verschwindet sie nach 15 Sekunden, und es wird nichts gedruckt. Ist das **falsche Band** eingelegt, bleibt sie stehen,
+bis der Rollenwechsel bestätigt ist; der Helfer prüft das Band unmittelbar vor dem Druck noch einmal und bricht bei
+falschem Band ab, ohne etwas zu senden. Alle Labels eines Druckvorgangs – auch aus verschiedenen Vorlagen gleicher
+Bandbreite – gehen als **ein Auftrag** an den Drucker (ein Vorlauf, Autocut dazwischen).
 
 Gedruckt wird mit den Originalvorlagen, sie werden dabei nicht verändert. Ist der Drucker nicht verbunden, wird kein
 Auftrag gesendet – so bleiben keine Aufträge in der Warteschlange hängen, die später unerwartet drucken.

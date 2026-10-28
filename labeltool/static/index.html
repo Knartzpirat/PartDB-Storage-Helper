@@ -108,6 +108,15 @@
   .tablewrap { overflow-x: auto; }
   .hexedit { display: flex; gap: 6px; align-items: center; }
   .hexedit input[type=text] { width: 90px; font-family: ui-monospace, Consolas, monospace; }
+  .printconfirm { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 50;
+                  width: min(640px, calc(100% - 32px)); background: var(--panel); border: 1px solid var(--line);
+                  border-left: 4px solid var(--accent); border-radius: 10px; padding: 14px 16px;
+                  box-shadow: 0 8px 28px rgba(0,0,0,.25); }
+  .printconfirm.wrong { border-left-color: var(--err); background: var(--err-bg); }
+  .printconfirm h4 { margin: 0 0 6px; font-size: 15px; }
+  .printconfirm .row { margin-top: 10px; }
+  .printconfirm input[type=number] { width: 80px; }
+  .printconfirm .timer { margin-left: auto; color: var(--muted); font-size: 13px; }
   .hint { font-size: 12px; color: var(--muted); margin-top: 3px; }
   /* Label-Vorschau: weißes Label auf neutraler Fläche, in hell und dunkel gut sichtbar */
   .labelstage { display: flex; flex-direction: column; align-items: center; gap: 10px; background: var(--stage);
@@ -164,8 +173,8 @@
 </header>
 <nav>
   <button data-tab="new" class="active">Neue Box</button>
-  <button data-tab="names">Box-Labels 24 mm <span class="count" id="c-names">–</span></button>
-  <button data-tab="content">Bauteil-Labels 12 mm <span class="count" id="c-content">–</span></button>
+  <button data-tab="names">Box-Labels <span class="count" id="c-names">–</span></button>
+  <button data-tab="content">Bauteil-Labels <span class="count" id="c-content">–</span></button>
   <button data-tab="boxes">Alle Boxen</button>
   <button data-tab="tpl">Vorlagen</button>
   <button data-tab="master">Stammdaten</button>
@@ -198,8 +207,8 @@
       <div class="tablewrap"><table><thead><tr><th>Name</th><th>Barcode</th><th>Inhalt</th><th>Boxfarbe</th><th>Lagerart</th><th>Abteile</th><th></th></tr></thead>
         <tbody id="t-new-queue"></tbody></table></div>
       <div class="row">
-        <button class="btn primary" data-direct-names hidden>Direkt drucken (24 mm)</button>
-        <button class="btn primary" data-print-names>Box-Labels drucken (24 mm)</button>
+        <button class="btn primary" data-direct-names hidden>Direkt drucken</button>
+        <button class="btn primary" data-print-names>Box-Labels drucken (CSV)</button>
         <button class="btn" data-names-done disabled>Gedruckt ✓</button>
         <span class="muted" data-print-status></span>
       </div>
@@ -207,14 +216,14 @@
     </div>
   </section>
 
-  <!-- Box-Labels 24 mm -->
+  <!-- Box-Labels -->
   <section id="tab-names">
     <div class="panel">
       <div class="tablewrap"><table><thead><tr><th>Name</th><th>Barcode</th><th>Inhalt</th><th>Boxfarbe</th><th>Lagerart</th><th></th></tr></thead>
         <tbody id="t-names"></tbody></table></div>
       <div class="row">
-        <button class="btn primary" data-direct-names hidden>Direkt drucken (24 mm)</button>
-        <button class="btn primary" data-print-names>Box-Labels drucken (24 mm)</button>
+        <button class="btn primary" data-direct-names hidden>Direkt drucken</button>
+        <button class="btn primary" data-print-names>Box-Labels drucken (CSV)</button>
         <button class="btn" data-names-done disabled>Gedruckt ✓</button>
         <span class="muted" data-print-status></span>
         <button class="btn" data-open data-desk>Ordner öffnen</button>
@@ -227,12 +236,12 @@
     </div>
   </section>
 
-  <!-- Bauteil-Labels 12 mm -->
+  <!-- Bauteil-Labels -->
   <section id="tab-content">
     <div class="panel">
       <div class="row" style="margin-top:0">
         <button class="btn" id="b-content-reload">Neu laden</button>
-        <button class="btn primary" id="b-content-direct" hidden>Direkt drucken (12 mm)</button>
+        <button class="btn primary" id="b-content-direct" hidden>Direkt drucken</button>
         <button class="btn primary" id="b-content-export">CSVs schreiben &amp; Vorlagen anzeigen</button>
         <button class="btn" id="b-content-done" disabled>Gedruckt – Tags entfernen</button>
         <button class="btn" data-open data-desk>Ordner öffnen</button>
@@ -312,7 +321,7 @@
         <button class="btn primary" id="b-type-new">+ Neue Lagerart</button></h2>
       <div class="tablewrap"><table><thead><tr><th>Name</th><th>Abteile</th><th>P-touch-Vorlage</th><th>CSV-Datei</th><th></th></tr></thead>
         <tbody id="t-types"></tbody></table></div>
-      <p class="muted">Abteile = Anzahl Bauteile auf dem 12-mm-Label. Vorlagen kommen aus <span class="mono" id="tpl-dir"></span>.
+      <p class="muted">Abteile = Anzahl Bauteile auf dem Bauteil-Label. Vorlagen kommen aus <span class="mono" id="tpl-dir"></span>.
         Leere CSV-Datei = <span class="mono">Inhalt_&lt;Name&gt;.csv</span>. Umbenennen ändert keine bestehenden Boxen in Part-DB.</p>
     </div>
   </section>
@@ -424,6 +433,7 @@
     </div>
   </section>
 </main>
+<div class="printconfirm" id="printconfirm" role="alertdialog" aria-modal="false" aria-labelledby="pc-title" hidden></div>
 
 <script>
 const $ = s => document.querySelector(s);
@@ -670,7 +680,56 @@ $("#b-create").onclick = async () => {
   btn.disabled = false;
 };
 
-// ---------- Box-Labels 24 mm
+// ---------- Bestätigung vor dem Direktdruck
+// Zeigt Band (aus der Vorlage), eingelegtes Band und Kopien. Ohne Klick verschwindet sie nach 15 s (nichts
+// wird gedruckt). Passt das eingelegte Band nicht, bleibt sie stehen, bis der Rollenwechsel bestätigt ist.
+const CONFIRM_SECONDS = 15;
+let PC = null;
+function closePrintConfirm(result) {
+  if (!PC) return;
+  clearInterval(PC.timer);
+  $("#printconfirm").hidden = true; $("#printconfirm").innerHTML = "";
+  const done = PC.resolve; PC = null; done(result);
+}
+async function confirmPrint(art, ids, titel) {
+  closePrintConfirm(null);
+  const info = await call("POST", "/api/druck/pruefen", {art, ids: ids || []});
+  if (!info.labels) throw new Error(info.ohne_vorlage?.length
+    ? `Keine Vorlage für: ${info.ohne_vorlage.join(", ")} – im Reiter Stammdaten eintragen.` : "Nichts zu drucken.");
+  const baender = info.baender.map(b => `${b.band_mm ? b.band_mm + " mm" : "unbekannt"} (${b.vorlagen.join(", ")})`).join(" · ");
+  const wrong = info.passt === false;
+  const el = $("#printconfirm");
+  el.className = "printconfirm" + (wrong ? " wrong" : "");
+  el.innerHTML = `<h4 id="pc-title">${esc(titel)}: ${info.labels} Label(s)</h4>
+    <div>Band laut Vorlage: <strong>${esc(baender)}</strong></div>
+    <div>Eingelegt: <strong>${esc(info.eingelegt || "nicht erkannt")}</strong>${info.passt === true ? " ✓" : ""}</div>
+    ${wrong ? `<div class="warn" style="margin-top:8px">Falsches Band eingelegt. Bitte Rolle wechseln und danach bestätigen.</div>` : ""}
+    ${info.ohne_vorlage?.length ? `<div class="warn" style="margin-top:8px">Ohne Vorlage, wird übersprungen: ${esc(info.ohne_vorlage.join(", "))}</div>` : ""}
+    <div class="row"><label for="pc-copies" style="margin:0">Kopien je Label</label>
+      <input id="pc-copies" type="number" min="1" max="50" value="1">
+      <button class="btn primary" id="pc-ok">${wrong ? "Rolle gewechselt – jetzt drucken" : "Drucken"}</button>
+      <button class="btn" id="pc-cancel">Abbrechen</button>
+      <span class="timer" id="pc-timer"></span></div>`;
+  el.hidden = false;
+  return new Promise(resolve => {
+    PC = {resolve, left: CONFIRM_SECONDS, timer: null};
+    const tick = () => {
+      if (!PC) return;
+      $("#pc-timer").textContent = `schließt in ${PC.left} s`;
+      if (PC.left-- <= 0) closePrintConfirm(null);
+    };
+    if (!wrong) { tick(); PC.timer = setInterval(tick, 1000); }   // falsches Band: kein Ablauf
+    // Eingaben halten die Leiste offen
+    $("#pc-copies").addEventListener("input", () => { if (PC && !wrong) PC.left = CONFIRM_SECONDS; });
+    $("#pc-ok").onclick = () => closePrintConfirm({
+      kopien: Math.min(50, Math.max(1, +$("#pc-copies").value || 1)), band_gewechselt: wrong});
+    $("#pc-cancel").onclick = () => closePrintConfirm(null);
+    el.onkeydown = e => { if (e.key === "Escape") closePrintConfirm(null); };
+    $("#pc-ok").focus();
+  });
+}
+
+// ---------- Box-Labels
 async function loadNames() {
   try {
     const r = await call("GET", "/api/name-labels");
@@ -706,7 +765,9 @@ document.querySelectorAll("[data-print-names]").forEach(b => b.onclick = async (
 document.querySelectorAll("[data-direct-names]").forEach(b => b.onclick = async () => {
   b.disabled = true;
   try {
-    const r = await call("POST", "/api/name-labels/print");
+    const opts = await confirmPrint("box", [], "Box-Labels");
+    if (!opts) { msg(namesMsg(), "Druck nicht bestätigt – nichts gedruckt.", false); b.disabled = !printGate().ok; return; }
+    const r = await call("POST", "/api/name-labels/print", opts);
     msg(namesMsg(), `${r.gedruckt} Box-Label(s) an den Drucker geschickt: ${r.boxen.join(", ")}\nWenn alle sauber rausgekommen sind: „Gedruckt ✓“.`);
     loadNames();
   } catch (e) { msg(namesMsg(), e.message, false); }
@@ -717,7 +778,7 @@ document.querySelectorAll("[data-names-done]").forEach(b => b.onclick = async ()
   catch (e) { msg(namesMsg(), e.message, false); }
 });
 
-// ---------- Bauteil-Labels 12 mm
+// ---------- Bauteil-Labels
 async function loadContent() {
   $("#content-list").innerHTML = `<p class="muted">Lade …</p>`;
   try {
@@ -752,7 +813,9 @@ $("#b-content-export").onclick = async () => {
 $("#b-content-direct").onclick = async () => {
   const b = $("#b-content-direct"); b.disabled = true;
   try {
-    const r = await call("POST", "/api/content-labels/print");
+    const opts = await confirmPrint("bauteile", [], "Bauteil-Labels");
+    if (!opts) { msg("#m-content", "Druck nicht bestätigt – nichts gedruckt.", false); b.disabled = !printGate().ok; return; }
+    const r = await call("POST", "/api/content-labels/print", opts);
     const lines = r.gedruckt.map(g => `${g.vorlage}: ${g.labels} Label(s)`);
     if (r.uebersprungen.length) lines.push(`Ohne Vorlage übersprungen: ${r.uebersprungen.join(", ")}`);
     msg("#m-content", `Gedruckt:\n${lines.join("\n")}\nWenn alles passt: „Gedruckt – Tags entfernen“.`, !r.uebersprungen.length);
@@ -846,7 +909,12 @@ async function reprint(direkt) {
   if (!ids.length) { msg("#m-reprint", "Bitte erst eine oder mehrere Boxen auswählen.", false); return; }
   const btn = direkt ? $("#b-reprint-direct") : $("#b-reprint-csv"); btn.disabled = true;
   try {
-    const r = await call("POST", "/api/content-labels/nachdruck", {ids, direkt});
+    let opts = {};
+    if (direkt) {
+      opts = await confirmPrint("nachdruck", ids, "Nachdruck");
+      if (!opts) { msg("#m-reprint", "Druck nicht bestätigt – nichts gedruckt.", false); btn.disabled = !printGate().ok; return; }
+    }
+    const r = await call("POST", "/api/content-labels/nachdruck", {ids, direkt, ...opts});
     if (direkt) {
       const lines = r.gedruckt.map(g => `${g.vorlage}: ${g.labels} Label(s)`);
       if (r.uebersprungen.length) lines.push(`Ohne Vorlage übersprungen: ${r.uebersprungen.join(", ")}`);
