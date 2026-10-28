@@ -262,6 +262,9 @@ def schreibe_helfer_yaml(path: Path, w: Werte) -> Path:
     fehler, _ = pruefe(w)
     if fehler:
         raise SetupFehler(" ".join(fehler))
+    # Netzlaufwerk (Z:\…) als UNC-Pfad speichern – der Helfer sieht Laufwerksbuchstaben nicht immer
+    from .desktop import unc_path
+    w.vorlagen_ordner = unc_path(w.vorlagen_ordner.strip())
     path = Path(path)
     text = yaml_text(w)
     data = yaml.safe_load(text)

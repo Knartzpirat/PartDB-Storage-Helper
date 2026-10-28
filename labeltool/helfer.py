@@ -375,6 +375,13 @@ def _folder(raw, base: Path) -> Path | None:
     return p if p.is_absolute() else base / p
 
 
+def _template_folder(raw, base: Path) -> Path | None:
+    """Vorlagen-Ordner; Netzlaufwerk-Buchstaben werden zum UNC-Pfad (sonst evtl. "Pfad nicht gefunden")."""
+    from .desktop import unc_path
+    folder = _folder(raw, base)
+    return Path(unc_path(folder)) if folder else None
+
+
 def load_helper_config(path: str | Path) -> HelferConfig:
     path = Path(path)
     try:
@@ -399,7 +406,7 @@ def load_helper_config(path: str | Path) -> HelferConfig:
                         pfade={str(k): str(v) for k, v in pfade.items()},
                         cache_dir=_folder(raw.get("cache_ordner") or ".helfer-cache", base),
                         status_interval=float(raw.get("status_intervall") or 10.0),
-                        vorlagen_ordner=_folder(raw.get("vorlagen_ordner"), base),
+                        vorlagen_ordner=_template_folder(raw.get("vorlagen_ordner"), base),
                         drucker_modell=str(raw.get("drucker_modell") or "").strip(),
                         csv_dir=_folder(raw.get("csv_ordner"), base) or default_csv_dir(base),
                         sync_interval=float(raw.get("abgleich_intervall") or 10.0))

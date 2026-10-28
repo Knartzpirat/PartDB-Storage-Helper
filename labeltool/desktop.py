@@ -21,6 +21,7 @@ import hashlib
 import os
 import re
 import shutil
+import sys
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -258,6 +259,44 @@ def _bpac_online_now(name: str) -> bool | None:
         return None
     finally:
         bpac._lock.release()
+
+
+def _drive_remote(letter: str) -> str | None:
+    """UNC-Ziel eines Netzlaufwerks: erst live (WNetGetConnection), sonst die gespeicherte Zuordnung
+    unter HKCU\\Network\\<Buchstabe> – die gibt es auch, wenn das Laufwerk gerade nicht verbunden ist."""
+    if not sys.platform.startswith("win"):
+        return None
+    try:
+        import ctypes
+        buf = ctypes.create_unicode_buffer(1024)
+        size = ctypes.c_ulong(len(buf))
+        if ctypes.windll.mpr.WNetGetConnectionW(f"{letter}:", buf, ctypes.byref(size)) == 0 and buf.value:
+            return buf.value
+    except Exception:
+        pass
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, rf"Network\{letter}") as key:
+            return str(winreg.QueryValueEx(key, "RemotePath")[0]) or None
+    except OSError:
+        return None
+
+
+def unc_path(path: str | Path, remote=_drive_remote) -> str:
+    """Z:\\Ordner -> \\\\Server\\Freigabe\\Ordner, wenn Z: ein Netzlaufwerk ist; sonst unverändert.
+
+    Laufwerksbuchstaben gelten nur in der Anmeldesitzung, die sie verbunden hat. Ein mit Admin-Rechten
+    oder sehr früh beim Anmelden gestarteter Helfer sieht sie nicht – der UNC-Pfad funktioniert immer.
+    """
+    text = str(path or "")
+    m = re.match(r"^([A-Za-z]):[\\/]?(.*)$", text)
+    if not m:
+        return text
+    target = remote(m.group(1).upper())
+    if not target:
+        return text
+    rest = m.group(2).replace("/", "\\").strip("\\")
+    return target.rstrip("\\") + ("\\" + rest if rest else "")
 
 
 def printer_state(name: str | None) -> dict:
