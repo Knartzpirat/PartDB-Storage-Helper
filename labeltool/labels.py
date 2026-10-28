@@ -55,6 +55,8 @@ class PartEntry:
     category: str
     compartment: int | None
     tagged: bool
+    mpn: str = ""        # Herstellernummer – nur für die Suche
+    ipn: str = ""        # interne Teilenummer – nur für die Suche
 
 
 @dataclass
@@ -146,6 +148,8 @@ def parts_by_location(api: PartDB, cfg: Config) -> tuple[dict[int, list[PartEntr
                 category=category,
                 compartment=compartment_of(lot, cfg.compartment_regex),
                 tagged=tagged,
+                mpn=str(p.get("manufacturer_product_number") or ""),
+                ipn=str(p.get("ipn") or ""),
             ))
             if tagged:
                 locations_with_tag.add(lid)
@@ -178,6 +182,46 @@ def content_label_for_box(api: PartDB, cfg: Config, box: Box) -> ContentLabel:
     """Label einer einzelnen Box mit allen Bauteilen, unabhängig vom Tag (für die Vorschau)."""
     by_location, _ = parts_by_location(api, cfg)
     return make_content_label(cfg, box, by_location.get(box.id, []))
+
+
+_ID_RE = re.compile(r"^(?:s|#)?0*(\d+)$", re.I)   # "S0203", "#203", "203"
+
+
+def search_boxes(boxes: dict[int, Box], by_location: dict[int, list[PartEntry]], query: str,
+                 limit: int = 30) -> list[tuple[Box, list[PartEntry]]]:
+    """Boxen zu einer Suche: Box-ID/Barcode, Boxname, Inhalt, Lagerart, Farbe oder ein Bauteil darin
+    (Name, ID, MPN, IPN, Footprint, Kategorie). Alle Suchwörter müssen passen.
+
+    -> [(Box, passende Bauteile)], exakte ID-Treffer zuerst, dann nach Boxname.
+    """
+    words = [w.lower() for w in query.split() if w.strip()]
+    if not words:
+        return []
+    exact: set[int] = set()
+    m = _ID_RE.match(query.strip()) if len(words) == 1 else None
+    if m:
+        exact.add(int(m.group(1)))
+
+    def box_text(b: Box) -> str:
+        return " ".join([str(b.id), b.barcode, b.name, b.content, b.box_type, b.color]).lower()
+
+    def part_text(p: PartEntry) -> str:
+        return " ".join([str(p.part_id), p.name, p.mpn, p.ipn, p.footprint, p.category]).lower()
+
+    hits = []
+    for b in boxes.values():
+        parts = by_location.get(b.id, [])
+        btext = box_text(b)
+        ptexts = [part_text(p) for p in parts]
+        # jedes Wort muss in der Box selbst oder in einem ihrer Bauteile vorkommen
+        if not all(w in btext or any(w in t for t in ptexts) for w in words):
+            if not (m and (b.id in exact or any(p.part_id in exact for p in parts))):
+                continue
+        matched = [p for p, t in zip(parts, ptexts)
+                   if any(w in t for w in words) or (m and p.part_id in exact)]
+        hits.append((b, matched))
+    hits.sort(key=lambda h: (h[0].id not in exact, h[0].name.lower()))
+    return hits[:limit]
 
 
 def write_csv(path: Path, columns: list[str], rows: list[dict], cfg: Config) -> Path:

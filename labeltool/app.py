@@ -11,8 +11,9 @@ from pydantic import BaseModel, Field
 
 from . import bpac, helfer_server, routes_einstellungen, routes_helfer_download, vorlagen
 from .config import BoxType, Category, Config
-from .labels import (NAME_COLUMNS, build_content_labels, content_label_for_box,
-                     export_content_labels, has_tag, name_label_rows, remove_tag, write_csv)
+from .labels import (NAME_COLUMNS, build_content_labels, content_label_for_box, export_content_labels,
+                     has_tag, make_content_label, name_label_rows, parts_by_location, remove_tag,
+                     search_boxes, write_csv)
 from .model import Box, build_comment, make_name, next_number, parse_box
 from .partdb import PartDB, PartDBError, ref_id
 from .ptouch import TemplateError, open_file
@@ -51,6 +52,11 @@ class BoxTypeIn(BaseModel):
     compartments: int = Field(default=1, ge=1, le=99)
     file: str = ""
     lbx: str = ""
+
+
+class Reprint(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=200)   # Lagerort-IDs der Boxen
+    direkt: bool = False                                    # True = Direktdruck, sonst CSV schreiben
 
 
 class OpenTemplate(BaseModel):
@@ -506,10 +512,8 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
             boxes = load_boxes(c)
             return build_content_labels(c, cfg, boxes)
 
-    @app.get("/api/content-labels")
-    def content_preview():
-        labels = _content_labels()
-        return [{
+    def _label_dict(l) -> dict:
+        return {
             "box": l.box.to_dict(),
             "vorlage": l.template_file,
             "felder": l.slots,
@@ -518,7 +522,62 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
                       for p in l.ordered_slots()],
             "row": l.row(cfg),
             "warnungen": l.warnings,
-        } for l in labels]
+        }
+
+    def _print_content(labels, flags: int) -> tuple[list[dict], list[str], list]:
+        """Direktdruck je Vorlage. -> (gedruckt, übersprungen, gedruckte Labels)."""
+        by_template: dict[str, list] = {}
+        skipped = []
+        for l in labels:
+            bt = cfg.box_types.get(l.box.box_type)
+            if bt and bt.lbx:
+                by_template.setdefault(bt.lbx, []).append(l)
+            else:
+                skipped.append(f"{l.box.name} ({l.box.box_type or 'ohne Lagerart'})")
+        printed, done = [], []
+        for lbx, labs in by_template.items():
+            printer.print_labels(cfg.template_dir / lbx, [l.row(cfg) for l in labs], cfg.printer, flags)
+            printed.append({"vorlage": lbx, "labels": len(labs)})
+            done.extend(labs)
+        return printed, skipped, done
+
+    @app.get("/api/content-labels")
+    def content_preview():
+        return [_label_dict(l) for l in _content_labels()]
+
+    # Nachdruck: Box suchen und ihr Bauteil-Label drucken – unabhängig vom Tag, Tags bleiben unberührt
+    @app.get("/api/content-labels/suche")
+    def content_search(q: str = "", limit: int = 30):
+        if not q.strip():
+            return {"treffer": [], "anzahl": 0}
+        with api() as c:
+            boxes = load_boxes(c)
+            by_location, _ = parts_by_location(c, cfg)
+        hits = search_boxes(boxes, by_location, q, limit=max(1, min(limit, 100)))
+        return {"anzahl": len(hits), "treffer": [
+            dict(_label_dict(make_content_label(cfg, b, by_location.get(b.id, []))),
+                 passende_bauteile=[p.name for p in matched])
+            for b, matched in hits]}
+
+    @app.post("/api/content-labels/nachdruck")
+    def content_reprint(req: Reprint):
+        flags = require_direct_print() if req.direkt else 0
+        if not req.direkt and state.data["last_content_export"]:
+            # Die CSVs würden den offenen Export überschreiben – danach entfernte "Gedruckt – Tags entfernen"
+            # Tags von Bauteilen, deren Label nie gedruckt wurde.
+            raise HTTPException(409, "Es gibt einen offenen Export mit getaggten Bauteilen. Erst drucken und "
+                                     "„Gedruckt – Tags entfernen“ bestätigen – oder den Nachdruck direkt drucken.")
+        with api() as c:
+            boxes = load_boxes(c)
+            by_location, _ = parts_by_location(c, cfg)
+        missing = [i for i in req.ids if i not in boxes]
+        if missing:
+            raise HTTPException(404, f"Box(en) nicht (mehr) in Part-DB: {', '.join(map(str, missing))}")
+        labels = [make_content_label(cfg, boxes[i], by_location.get(i, [])) for i in dict.fromkeys(req.ids)]
+        if req.direkt:
+            printed, skipped, _ = _print_content(labels, flags)
+            return {"gedruckt": printed, "uebersprungen": skipped}
+        return {"dateien": export_content_labels(labels, cfg), "labels": len(labels)}
 
     @app.post("/api/content-labels/export")
     def content_export():
@@ -536,19 +595,8 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
         labels = _content_labels()
         if not labels:
             raise HTTPException(400, f"Keine Bauteile mit Tag '{cfg.label_tag}' gefunden.")
-        by_template: dict[str, list] = {}
-        skipped = []
-        for l in labels:
-            bt = cfg.box_types.get(l.box.box_type)
-            if bt and bt.lbx:
-                by_template.setdefault(bt.lbx, []).append(l)
-            else:
-                skipped.append(f"{l.box.name} ({l.box.box_type or 'ohne Lagerart'})")
-        printed, part_ids = [], set()
-        for lbx, labs in by_template.items():
-            printer.print_labels(cfg.template_dir / lbx, [l.row(cfg) for l in labs], cfg.printer, flags)
-            printed.append({"vorlage": lbx, "labels": len(labs)})
-            part_ids.update(pid for l in labs for pid in l.tagged_part_ids)
+        printed, skipped, done = _print_content(labels, flags)
+        part_ids = {pid for l in done for pid in l.tagged_part_ids}
         # Tags werden erst nach "Gedruckt – Tags entfernen" entfernt, nur für tatsächlich gedruckte Labels
         state.set("last_content_export", sorted(part_ids))
         return {"gedruckt": printed, "uebersprungen": skipped, "bauteile": len(part_ids)}

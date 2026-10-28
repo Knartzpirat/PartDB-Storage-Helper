@@ -242,6 +242,23 @@
       <div id="content-files"></div>
       <div id="content-list"></div>
     </div>
+
+    <div class="panel">
+      <h2>Inhaltslabel nachdrucken</h2>
+      <p class="muted" style="margin:0 0 10px">Box suchen – nach Box-ID oder Barcode (<span class="mono">S0203</span>, <span class="mono">203</span>),
+        Boxname, Inhalt, Lagerart oder einem Bauteil darin (Name, Bauteil-ID wie <span class="mono">#304</span>, Herstellernummer, Footprint).
+        Mehrere Wörter müssen alle passen. Tags in Part-DB bleiben beim Nachdruck unverändert.</p>
+      <div class="grid"><div><label for="f-reprint">Suche</label>
+        <input id="f-reprint" type="search" placeholder="z. B. S0250, MIC-2, ESP32, SOT-23 …" autocomplete="off"></div></div>
+      <div class="row">
+        <button class="btn primary" id="b-reprint-direct" hidden>Ausgewählte direkt drucken</button>
+        <button class="btn" id="b-reprint-csv">Ausgewählte als CSV schreiben</button>
+        <span class="muted" id="reprint-count"></span>
+      </div>
+      <div class="msg" id="m-reprint"></div>
+      <div id="reprint-files"></div>
+      <div id="reprint-list"></div>
+    </div>
   </section>
 
   <!-- Alle Boxen -->
@@ -448,10 +465,10 @@ async function loadPrintStatus() {
 // Knöpfe/Hinweise aus PRINT (/api/print-status) und STATUS (/api/status: Helfer, Drucker) ableiten
 function renderPrintStatus() {
   const g = printGate();
-  const direct = [...document.querySelectorAll("[data-direct-names]"), $("#b-content-direct")];
+  const direct = [...document.querySelectorAll("[data-direct-names]"), $("#b-content-direct"), $("#b-reprint-direct")];
   direct.forEach(b => { b.hidden = !PRINT.aktiv; b.disabled = !g.ok; b.title = g.ok ? "" : g.grund; });
   // Mit Direktdruck wird der CSV-Weg zum Zweitweg
-  document.querySelectorAll("[data-print-names], #b-content-export").forEach(b => b.classList.toggle("primary", !g.ok));
+  document.querySelectorAll("[data-print-names], #b-content-export, #b-reprint-csv").forEach(b => b.classList.toggle("primary", !g.ok));
   const link = !PRINT.ok && PRINT.hilfe_url ? ` <a href="${esc(PRINT.hilfe_url)}" target="_blank" rel="noopener">Zum Download bei Brother</a>` : "";
   document.querySelectorAll("[data-print-status]").forEach(el => el.innerHTML = !PRINT.aktiv ? ""
     : g.ok ? `Direktdruck bereit${PRINT.gewaehlt ? " – " + esc(PRINT.gewaehlt) : ""}`
@@ -698,10 +715,7 @@ $("#b-content-export").onclick = async () => {
   try {
     const r = await call("POST", "/api/content-labels/export");
     msg("#m-content", `${r.bauteile} Bauteile in ${r.dateien.length} Datei(en) geschrieben. Vorlage öffnen, alle Datensätze drucken, dann „Gedruckt – Tags entfernen“.`);
-    $("#content-files").innerHTML = `<table style="margin-top:12px"><thead><tr><th>CSV</th><th>Labels</th><th>Lagerart</th><th></th></tr></thead><tbody>`
-      + r.dateien.map(d => `<tr><td class="mono">${esc(d.datei.split(/[\\/]/).pop())}</td><td>${d.labels}</td><td>${esc(d.lagerarten.join(", "))}</td>
-        <td class="actions">${d.lbx.length ? `<button class="btn primary" data-desk onclick="openTemplate(${jsArg(d.lagerarten.find(t => META.boxtypen.find(x => x.name === t)?.lbx))}, this)">In P-touch öffnen</button>`
-          : `<span class="muted">keine Vorlage eingetragen</span>`}</td></tr>`).join("") + `</tbody></table>`;
+    $("#content-files").innerHTML = csvFilesTable(r.dateien);
     $("#b-content-done").disabled = false; applyGates();
   } catch (e) { msg("#m-content", e.message, false); }
 };
@@ -725,6 +739,85 @@ $("#b-content-done").onclick = async () => {
     loadContent();
   } catch (e) { msg("#m-content", e.message, false); }
 };
+
+function csvFilesTable(dateien) {
+  return `<table style="margin-top:12px"><thead><tr><th>CSV</th><th>Labels</th><th>Lagerart</th><th></th></tr></thead><tbody>`
+    + dateien.map(d => `<tr><td class="mono">${esc(d.datei.split(/[\\/]/).pop())}</td><td>${d.labels}</td><td>${esc(d.lagerarten.join(", "))}</td>
+      <td class="actions">${d.lbx.length ? `<button class="btn primary" data-desk onclick="openTemplate(${jsArg(d.lagerarten.find(t => META.boxtypen.find(x => x.name === t)?.lbx))}, this)">In P-touch öffnen</button>`
+        : `<span class="muted">keine Vorlage eingetragen</span>`}</td></tr>`).join("") + `</tbody></table>`;
+}
+
+// ---------- Inhaltslabel nachdrucken (Suche nach Box oder Bauteil)
+let REPRINT = {q: "", hits: [], sel: new Set(), timer: null, seq: 0};
+function reprintSearch(now = false) {
+  clearTimeout(REPRINT.timer);
+  REPRINT.timer = setTimeout(async () => {
+    const q = $("#f-reprint").value.trim();
+    if (q === REPRINT.q && !now) return;
+    REPRINT.q = q;
+    const seq = ++REPRINT.seq;
+    if (!q) { REPRINT.hits = []; renderReprint(); return; }
+    $("#reprint-list").innerHTML = `<p class="muted">Suche …</p>`;
+    try {
+      const r = await call("GET", `/api/content-labels/suche?q=${encodeURIComponent(q)}`);
+      if (seq !== REPRINT.seq) return;          // veraltete Antwort
+      REPRINT.hits = r.treffer;
+      if (r.treffer.length === 1) REPRINT.sel.add(r.treffer[0].box.id);   // Einzeltreffer gleich auswählen
+      renderReprint();
+    } catch (e) { if (seq === REPRINT.seq) { $("#reprint-list").innerHTML = ""; msg("#m-reprint", e.message, false); } }
+  }, now ? 0 : 400);
+}
+function renderReprint() {
+  const q = REPRINT.q, hits = REPRINT.hits;
+  $("#reprint-list").innerHTML = !q ? "" : hits.map(l => {
+    const id = l.box.id, checked = REPRINT.sel.has(id) ? "checked" : "";
+    const match = (l.passende_bauteile || []).length ? `<div class="muted">Passend: ${esc(l.passende_bauteile.join(", "))}</div>` : "";
+    return `<div class="card">
+      <h3><input type="checkbox" id="rp-${id}" ${checked} onchange="reprintToggle(${id}, this.checked)" aria-label="${esc(l.box.name)} auswählen">
+        <label for="rp-${id}" style="display:contents">${sw(l.box.color_hex)}<span class="mono">${esc(l.box.name)}</span></label>
+        <span class="muted">${esc(l.box.barcode)} · ${esc(l.box.content)} · ${esc(l.box.box_type || "ohne Lagerart")}</span></h3>
+      ${match}
+      <div class="label24" style="grid-template-columns: repeat(${Math.min(l.felder, 6)}, 1fr)">
+        ${l.slots.map((s, i) => `<div class="slot"><small>${i + 1}</small>${s ? esc(s.name) + `<small>${esc(s.footprint)}</small>` : ""}</div>`).join("")}
+      </div>
+      ${l.warnungen.map(w => `<div class="warn">${esc(w)}</div>`).join("")}
+      <div class="row" style="margin-top:8px"><button class="btn" data-pv aria-expanded="false" aria-controls="pv-n-${id}"
+        onclick="toggleCardPreview(this, ${id}, ${jsArg(l.box.name)}, 'pv-n-')">Vorschau</button></div>
+      <div class="labelstage" id="pv-n-${id}" aria-live="polite" hidden></div>
+    </div>`;
+  }).join("") || `<p class="muted">Keine Box gefunden.</p>`;
+  updateReprintCount(); sweepPreviews(); applyGates();
+}
+function reprintToggle(id, on) { on ? REPRINT.sel.add(id) : REPRINT.sel.delete(id); updateReprintCount(); }
+function updateReprintCount() {
+  const n = REPRINT.sel.size;
+  $("#reprint-count").textContent = n ? `${n} Box(en) ausgewählt` + (n > REPRINT.hits.filter(h => REPRINT.sel.has(h.box.id)).length
+    ? " (auch aus früheren Suchen)" : "") : "";
+}
+async function reprint(direkt) {
+  const ids = [...REPRINT.sel];
+  if (!ids.length) { msg("#m-reprint", "Bitte erst eine oder mehrere Boxen auswählen.", false); return; }
+  const btn = direkt ? $("#b-reprint-direct") : $("#b-reprint-csv"); btn.disabled = true;
+  try {
+    const r = await call("POST", "/api/content-labels/nachdruck", {ids, direkt});
+    if (direkt) {
+      const lines = r.gedruckt.map(g => `${g.vorlage}: ${g.labels} Label(s)`);
+      if (r.uebersprungen.length) lines.push(`Ohne Vorlage übersprungen: ${r.uebersprungen.join(", ")}`);
+      msg("#m-reprint", `Nachgedruckt:\n${lines.join("\n")}`, !r.uebersprungen.length);
+      $("#reprint-files").innerHTML = "";
+    } else {
+      msg("#m-reprint", `${r.labels} Label(s) in ${r.dateien.length} Datei(en) geschrieben – Vorlage öffnen und alle Datensätze drucken.`);
+      $("#reprint-files").innerHTML = csvFilesTable(r.dateien);
+    }
+    REPRINT.sel.clear(); renderReprint();
+  } catch (e) { msg("#m-reprint", e.message, false); }
+  btn.disabled = direkt ? !printGate().ok : false;
+  applyGates();
+}
+$("#f-reprint").addEventListener("input", () => reprintSearch());
+$("#f-reprint").addEventListener("keydown", e => { if (e.key === "Enter") reprintSearch(true); });
+$("#b-reprint-direct").onclick = () => reprint(true);
+$("#b-reprint-csv").onclick = () => reprint(false);
 
 async function openTemplate(boxType, btn) {
   btn.disabled = true;
@@ -965,8 +1058,8 @@ function toggleRowPreview(btn, id, key, cols, name) {
   showPreview(pid, `/api/name-labels/${id}/vorschau`, null, {alt: `Vorschau Box-Label ${name}`});
 }
 // Bauteil-Labels: Vorschau unter der Feld-Darstellung der Karte
-function toggleCardPreview(btn, id, name) {
-  const pid = `pv-c-${id}`, el = document.getElementById(pid);
+function toggleCardPreview(btn, id, name, prefix = "pv-c-") {
+  const pid = `${prefix}${id}`, el = document.getElementById(pid);
   if (!el) return;
   if (!el.hidden) {
     el.hidden = true; el.innerHTML = ""; dropPreview(pid);
