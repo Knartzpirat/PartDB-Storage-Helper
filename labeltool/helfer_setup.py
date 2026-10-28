@@ -23,7 +23,7 @@ import threading
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from urllib.parse import urlsplit
 
 import yaml
@@ -166,7 +166,7 @@ def pruefe(w: Werte, modelle: list[str] | None = None) -> tuple[list[str], list[
     ordner = (w.vorlagen_ordner or "").strip()
     if not ordner:
         fehler.append("Bitte den Vorlagen-Ordner wählen (dort liegen die .lbx-Vorlagen auf diesem PC).")
-    elif not Path(ordner).is_absolute():
+    elif not (Path(ordner).is_absolute() or PureWindowsPath(ordner).is_absolute()):   # Windows-Pfad, auch beim Testen unter Linux
         fehler.append("Der Vorlagen-Ordner braucht einen vollständigen Pfad, z. B. C:\\Users\\…\\Dokumente\\Labeltool-Vorlagen.")
     elif Path(ordner).exists() and not Path(ordner).is_dir():
         fehler.append(f"'{ordner}' ist eine Datei, kein Ordner.")

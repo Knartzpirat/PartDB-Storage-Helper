@@ -141,27 +141,38 @@ exakter Vorschau (dann SVG-Skizze) und „In P-touch öffnen“.
 > Reverse-Proxy nur mit eigener Authentifizierung). Part-DB-Token und Helfer-Token liegen im Klartext in
 > `/config/einstellungen.yaml` (Unraid: `/mnt/user/appdata/labeltool/config/einstellungen.yaml`).
 
-### Image bauen
+### Image (fertig von GitHub)
 
-Es gibt kein fertiges Image in einer Registry, es wird auf dem Unraid-Server aus diesem Ordner gebaut.
+GitHub baut das Image bei jedem Push auf `main` automatisch (Workflow `.github/workflows/docker.yml`: erst Tests,
+dann Build) und legt es in der GitHub Container Registry ab:
 
-1. Projektordner auf den Server kopieren, z. B. nach `/mnt/user/appdata/labeltool/src`
-   (über die Freigabe `\\UnraidHome\appdata\labeltool\src`). `.venv`, `config.yaml` usw. braucht es nicht,
-   `.dockerignore` lässt sie ohnehin weg.
-2. **Variante A – Compose (Plugin „Docker Compose Manager“):** neuen Stack anlegen, als Compose-Datei
-   `docker-compose.yml` aus dem Projekt nehmen (bzw. Stack-Ordner auf `/mnt/user/appdata/labeltool/src` legen) und
-   „Compose Up“. Im Terminal geht dasselbe mit
-   ```
-   cd /mnt/user/appdata/labeltool/src
-   docker compose up -d --build
-   ```
-3. **Variante B – Unraid-Template:** erst das Image bauen
-   ```
-   docker build -t labeltool:latest /mnt/user/appdata/labeltool/src
-   ```
-   dann `docker/labeltool.xml` nach `/boot/config/plugins/dockerMan/templates-user/my-labeltool.xml` kopieren und unter
-   *Docker → Add Container → Template „labeltool“* anlegen. Nach einem Update des Tools den Build-Befehl wiederholen und
-   den Container neu erstellen (beim Compose-Weg: `docker compose up -d --build`).
+```
+ghcr.io/knartzpirat/partdb-storage-helper:latest
+```
+
+Heißt das Repository anders, lautet der Name `ghcr.io/<github-benutzer>/<repository>` (klein geschrieben) –
+dann in `docker-compose.yml` bzw. `docker/labeltool.xml` anpassen. Versionen: ein Git-Tag `v1.2.3` erzeugt zusätzlich
+`:1.2.3` und `:1.2`.
+
+**Privates Repository:** Das Image ist dann ebenfalls privat. Entweder auf GitHub unter *Packages →
+partdb-storage-helper → Package settings → Change visibility* nur das Image öffentlich stellen (der Quellcode bleibt
+privat, im Image stecken keine Zugangsdaten), oder Unraid einmal anmelden:
+```
+docker login ghcr.io -u Knartzpirat
+```
+Als Passwort ein GitHub-Token (*Settings → Developer settings → Personal access tokens*) mit nur `read:packages`.
+
+1. **Variante A – Compose (Plugin „Docker Compose Manager“):** neuen Stack mit `docker-compose.yml` aus dem Projekt
+   anlegen und „Compose Up“. Im Terminal: `docker compose pull && docker compose up -d`.
+2. **Variante B – Unraid-Template:** `docker/labeltool.xml` nach
+   `/boot/config/plugins/dockerMan/templates-user/my-labeltool.xml` kopieren und unter
+   *Docker → Add Container → Template „labeltool“* anlegen.
+
+**Update:** im Docker-Tab „Check for Updates“ → „Update“ (bzw. `docker compose pull && docker compose up -d`).
+
+**Selbst bauen** (ohne GitHub): Projekt nach `/mnt/user/appdata/labeltool/src` kopieren und
+`docker build -t labeltool:latest /mnt/user/appdata/labeltool/src` – dann im Template/Compose `labeltool:latest`
+als Image eintragen (in `docker-compose.yml` den `build:`-Block einkommentieren).
 
 Das Image läuft als Benutzer `99:100` (Unraid `nobody:users`). Andere IDs: Build-Argumente `PUID`/`PGID`
 (`docker build --build-arg PUID=1000 --build-arg PGID=1000 …`).

@@ -1,10 +1,11 @@
 <?xml version="1.0"?>
 <!-- Unraid-Template: nach /boot/config/plugins/dockerMan/templates-user/my-labeltool.xml kopieren.
-     Das Image labeltool:latest muss vorher lokal gebaut werden (siehe README, "Betrieb im Docker (Unraid)"). -->
+     Das Image baut GitHub automatisch (.github/workflows/docker.yml) und legt es in ghcr.io ab.
+     Bei anderem Repository-Namen <Repository> anpassen: ghcr.io/<github-benutzer>/<repository> (klein). -->
 <Container version="2">
   <Name>labeltool</Name>
-  <Repository>labeltool:latest</Repository>
-  <Registry/>
+  <Repository>ghcr.io/knartzpirat/partdb-storage-helper:latest</Repository>
+  <Registry>https://github.com/Knartzpirat/PartDB-Storage-Helper/pkgs/container/partdb-storage-helper</Registry>
   <Network>bridge</Network>
   <MyIP/>
   <Shell>bash</Shell>
@@ -21,7 +22,7 @@
   <CPUset/>
   <DonateText/>
   <DonateLink/>
-  <Requires>Image lokal bauen: docker build -t labeltool:latest /mnt/user/appdata/labeltool/src</Requires>
+  <Requires>Privates Image: einmal auf dem Unraid-Terminal 'docker login ghcr.io' (GitHub-Benutzer + Token mit read:packages). Ist das Paket öffentlich, entfällt das.</Requires>
   <Config Name="Web-UI Port" Target="8765" Default="8765" Mode="tcp" Description="Port der Weboberfläche und des Druck-Helfers" Type="Port" Display="always" Required="true" Mask="false">8765</Config>
   <Config Name="Konfiguration" Target="/config" Default="/mnt/user/appdata/labeltool/config" Mode="rw" Description="config.yaml, einstellungen.yaml (enthält Tokens!), stammdaten.yaml, status.json" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/labeltool/config</Config>
   <Config Name="Ausgabe (CSV)" Target="/ausgabe" Default="/mnt/user/appdata/labeltool/ausgabe" Mode="rw" Description="CSV-Dateien für den P-touch Editor" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/labeltool/ausgabe</Config>

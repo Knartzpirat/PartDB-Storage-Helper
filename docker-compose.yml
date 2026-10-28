@@ -1,13 +1,16 @@
-# Labeltool auf Unraid/Linux. Image wird lokal gebaut (kein Registry-Image):
-#   docker compose up -d --build
+# Labeltool auf Unraid/Linux. Das Image baut GitHub automatisch (.github/workflows/docker.yml):
+#   docker compose pull && docker compose up -d
+# Image-Name = ghcr.io/<github-benutzer>/<repository> (klein geschrieben) – bei anderem Repository-Namen anpassen.
 services:
   labeltool:
-    build:
-      context: .
-      args:
-        PUID: "99"     # Unraid: nobody
-        PGID: "100"    # Unraid: users
-    image: labeltool:latest
+    image: ghcr.io/knartzpirat/partdb-storage-helper:latest
+    # Statt des fertigen Images selbst bauen: die nächsten Zeilen einkommentieren, dann
+    #   docker compose up -d --build
+    # build:
+    #   context: .
+    #   args:
+    #     PUID: "99"     # Unraid: nobody
+    #     PGID: "100"    # Unraid: users
     container_name: labeltool
     restart: unless-stopped
     ports:
