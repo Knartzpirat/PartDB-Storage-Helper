@@ -34,6 +34,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import hashlib
 import json
 import logging
 import os
@@ -105,8 +106,245 @@ class HelferConfig:
 
 
 def default_csv_dir(base: Path) -> Path:
-    local = os.environ.get("LOCALAPPDATA", "").strip()
-    return Path(local) / "Labeltool-Helfer" / "csv" if local else base / ".helfer-csv"
+    if os.environ.get(ENV_ORDNER, "").strip() or os.environ.get("LOCALAPPDATA", "").strip():
+        return benutzer_ordner() / "csv"
+    return base / ".helfer-csv"
+
+
+# ------------------------------------------------------------------ Gepackter Betrieb (Installer)
+# Installiert (PyInstaller, sys.frozen) liegen helfer.yaml, Cache, CSVs und helfer.log in
+# %LOCALAPPDATA%\Labeltool-Helfer\ – der Programmordner (C:\Program Files\…) bleibt schreibgeschützt.
+# Aus dem Projekt/ZIP (helfer.bat) gilt weiter helfer.yaml im aktuellen Ordner.
+APP_ORDNER = "Labeltool-Helfer"
+ENV_ORDNER = "LABELTOOL_HELFER_DIR"        # anderer Benutzerdaten-Ordner (Tests, Sonderfälle)
+ENV_STILL = "LABELTOOL_HELFER_STILL"       # "1": keine Meldungsfenster (Tests, unbeaufsichtigt)
+EXE_HELFER = "LabeltoolHelfer.exe"
+EXE_SETUP = "LabeltoolHelferSetup.exe"
+LOG_DATEI = "helfer.log"
+LOG_GROESSE = 1024 * 1024                  # 1 MB je Datei, dazu 3 ältere
+LOG_ANZAHL = 3
+INSTANZ_PREFIX = "Labeltool-Druck-Helfer-"
+
+
+def gepackt() -> bool:
+    """Läuft als installiertes Programm (PyInstaller)?"""
+    return bool(getattr(sys, "frozen", False))
+
+
+def benutzer_ordner(env: dict | None = None) -> Path:
+    """%LOCALAPPDATA%\\Labeltool-Helfer (bzw. LABELTOOL_HELFER_DIR)."""
+    env = os.environ if env is None else env
+    eigen = str(env.get(ENV_ORDNER) or "").strip()
+    if eigen:
+        return Path(eigen)
+    local = str(env.get("LOCALAPPDATA") or "").strip()
+    return (Path(local) if local else Path.home() / "AppData" / "Local") / APP_ORDNER
+
+
+def standard_konfig(frozen: bool | None = None) -> Path:
+    """Standard-helfer.yaml: installiert im Benutzerordner, sonst im aktuellen Ordner."""
+    frozen = gepackt() if frozen is None else frozen
+    return benutzer_ordner() / "helfer.yaml" if frozen else Path("helfer.yaml")
+
+
+def programm_ordner() -> Path:
+    """Ordner mit LabeltoolHelfer.exe/LabeltoolHelferSetup.exe (installiert) bzw. das Projekt."""
+    return Path(sys.executable).resolve().parent if gepackt() else Path(__file__).resolve().parent.parent
+
+
+def einrichten_hinweis() -> str:
+    return "Startmenü → „Druck-Helfer einrichten“" if gepackt() else "„helfer.bat einrichten“"
+
+
+def instanz_name(config_path: str | Path) -> str:
+    """Name von Mutex/Ende-Ereignis – je Konfigurationsdatei (Autostart + Handstart = dieselbe Datei)."""
+    p = os.path.normcase(os.path.abspath(str(config_path)))
+    return INSTANZ_PREFIX + hashlib.sha1(p.encode("utf-8")).hexdigest()[:16]
+
+
+class _Kernel:
+    """Die paar kernel32-Funktionen für Mutex und Ereignis (nur Windows)."""
+
+    def __init__(self):
+        import ctypes
+        from ctypes import wintypes
+        k = ctypes.WinDLL("kernel32", use_last_error=True)
+        H, B, D, S = wintypes.HANDLE, wintypes.BOOL, wintypes.DWORD, wintypes.LPCWSTR
+        for name, res, args in (("CreateMutexW", H, (ctypes.c_void_p, B, S)), ("OpenMutexW", H, (D, B, S)),
+                                ("CreateEventW", H, (ctypes.c_void_p, B, B, S)), ("OpenEventW", H, (D, B, S)),
+                                ("SetEvent", B, (H,)), ("CloseHandle", B, (H,)),
+                                ("WaitForSingleObject", D, (H, D))):
+            fn = getattr(k, name)
+            fn.restype, fn.argtypes = res, args
+            setattr(self, name, fn)
+        self.last_error = ctypes.get_last_error
+
+
+ERROR_ALREADY_EXISTS = 183
+SYNCHRONIZE = 0x00100000
+EVENT_MODIFY_STATE = 0x0002
+INFINITE = 0xFFFFFFFF
+
+
+class Einzelinstanz:
+    """Nur ein Helfer je helfer.yaml: benannter Mutex `Local\\<name>`; dazu das Ereignis
+    `Local\\<name>-Ende`, über das Assistent/Installer den laufenden Helfer sauber beenden."""
+
+    def __init__(self, config_path: str | Path):
+        self.name = instanz_name(config_path)
+        self._k = _Kernel() if sys.platform == "win32" else None
+        self._mutex = self._event = None
+
+    def erwerben(self) -> bool:
+        """True = wir sind der einzige Helfer für diese Konfiguration."""
+        if self._k is None:
+            return True
+        h = self._k.CreateMutexW(None, False, "Local\\" + self.name)
+        if not h:
+            return True     # Mutex nicht anlegbar: lieber laufen als gar nicht
+        if self._k.last_error() == ERROR_ALREADY_EXISTS:
+            self._k.CloseHandle(h)
+            return False
+        self._mutex = h
+        self._event = self._k.CreateEventW(None, True, False, "Local\\" + self.name + "-Ende")
+        return True
+
+    def warte_ende(self, timeout: float | None = None) -> bool:
+        """Blockiert, bis jemand das Ende-Ereignis setzt (True) bzw. bis timeout (False)."""
+        if self._k is None or not self._event:
+            if timeout is None:
+                threading.Event().wait()
+            return False
+        ms = INFINITE if timeout is None else int(timeout * 1000)
+        return self._k.WaitForSingleObject(self._event, ms) == 0
+
+    def freigeben(self) -> None:
+        if self._k is None:
+            return
+        for h in (self._event, self._mutex):
+            if h:
+                self._k.CloseHandle(h)
+        self._mutex = self._event = None
+
+
+def helfer_laeuft(config_path: str | Path) -> bool:
+    """Läuft (in dieser Windows-Sitzung) ein Helfer mit dieser helfer.yaml?"""
+    if sys.platform != "win32":
+        return False
+    k = _Kernel()
+    h = k.OpenMutexW(SYNCHRONIZE, False, "Local\\" + instanz_name(config_path))
+    if not h:
+        return False
+    k.CloseHandle(h)
+    return True
+
+
+def helfer_beenden(config_path: str | Path, timeout: float = 10.0, laeuft=helfer_laeuft) -> bool | None:
+    """Laufenden Helfer zu dieser helfer.yaml bitten, sich zu beenden.
+
+    -> None: lief keiner; True: beendet; False: reagiert nicht innerhalb von timeout.
+    """
+    if not laeuft(config_path):
+        return None
+    if sys.platform == "win32":
+        k = _Kernel()
+        h = k.OpenEventW(EVENT_MODIFY_STATE, False, "Local\\" + instanz_name(config_path) + "-Ende")
+        if h:
+            k.SetEvent(h)
+            k.CloseHandle(h)
+    ende = time.monotonic() + timeout
+    while time.monotonic() < ende:
+        if not laeuft(config_path):
+            return True
+        time.sleep(0.1)
+    return not laeuft(config_path)
+
+
+def meldung(text: str, frage: bool = False, titel: str = "Labeltool Druck-Helfer") -> bool:
+    """Meldungsfenster im installierten Programm (ohne Konsole). frage=True: Ja/Nein -> True bei Ja.
+
+    Aus dem Projekt/ZIP (Konsole) bzw. mit LABELTOOL_HELFER_STILL=1: nur Text in die Konsole/das Log."""
+    if os.environ.get(ENV_STILL, "").strip() not in ("", "0") or not gepackt() or sys.platform != "win32":
+        if sys.stderr is not None:
+            print(text, file=sys.stderr)
+        return False
+    import ctypes
+    stil = (0x4 | 0x20) if frage else 0x40          # MB_YESNO|MB_ICONQUESTION bzw. MB_ICONINFORMATION
+    return ctypes.windll.user32.MessageBoxW(None, text, titel, stil | 0x10000) == 6    # MB_SETFOREGROUND, IDYES
+
+
+def setup_starten(config_path: Path | None = None, popen=None) -> None:
+    """Einrichtungs-Assistenten des installierten Programms starten."""
+    import subprocess
+    popen = popen or subprocess.Popen
+    args = [str(programm_ordner() / EXE_SETUP)]
+    if config_path is not None and Path(config_path).resolve() != standard_konfig(True).resolve():
+        args.append(str(config_path))
+    popen(args, cwd=str(programm_ordner()))
+
+
+def logging_einrichten(datei: Path | None, rotation: bool = True) -> None:
+    """Konsole (falls vorhanden) und/oder Datei mit Rotation (1 MB × 3)."""
+    from logging.handlers import RotatingFileHandler
+    handlers: list[logging.Handler] = []
+    if datei is not None:
+        try:
+            Path(datei).parent.mkdir(parents=True, exist_ok=True)
+            fh = (RotatingFileHandler(datei, maxBytes=LOG_GROESSE, backupCount=LOG_ANZAHL, encoding="utf-8")
+                  if rotation else logging.FileHandler(datei, encoding="utf-8"))
+            fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)-7s %(message)s", "%Y-%m-%d %H:%M:%S"))
+            handlers.append(fh)
+        except OSError:
+            pass
+    if sys.stderr is not None:
+        sh = logging.StreamHandler()
+        sh.setFormatter(logging.Formatter("%(asctime)s  %(message)s", "%H:%M:%S"))
+        handlers.append(sh)
+    if not handlers:
+        handlers.append(logging.NullHandler())
+    logging.basicConfig(level=logging.INFO, handlers=handlers, force=True)
+    logging.getLogger("websockets").setLevel(logging.WARNING)
+
+
+def diagnose(ausgabe: Path, vorlage: Path | None = None, printer=bpac) -> dict:
+    """Selbsttest ohne Druck: b-PAC, Drucker, Modellliste, optional Vorschau einer Vorlage (PNG
+    neben `ausgabe`). Ergebnis als JSON nach `ausgabe` (das gepackte Programm hat keine Konsole)."""
+    from . import ptouch_modelle
+    out: dict = {"version": __version__, "gepackt": gepackt(), "programm": sys.executable,
+                 "benutzer_ordner": str(benutzer_ordner()), "konfig": str(standard_konfig()), "ok": True}
+    try:
+        out["bpac"] = bool(printer.preview_available())
+        out["drucker"] = [str(n) for n in printer.status("").get("drucker") or []]
+    except Exception as e:
+        out["bpac"], out["bpac_fehler"], out["ok"] = False, str(e), False
+    try:
+        info = ptouch_modelle.modelle_info()
+        out["modelle_anzahl"], out["modelle_quelle"] = len(info["modelle"]), info["quelle"]
+        out["installierte_drucker"] = ptouch_modelle.installierte_drucker()
+    except Exception as e:
+        out["modelle_fehler"], out["ok"] = str(e), False
+    try:
+        import tkinter   # noqa: F401 – nur prüfen, ob gepackt
+        out["tkinter"] = True
+    except Exception as e:
+        out["tkinter"] = f"fehlt: {e}"
+    try:
+        from websockets.asyncio.client import connect   # noqa: F401
+        out["websockets"] = True
+    except Exception as e:
+        out["websockets"], out["ok"] = f"fehlt: {e}", False
+    if vorlage is not None:
+        try:
+            row = {col: "TEST" for _, col in bpac.merge_fields(Path(vorlage)) if col}
+            png = printer.render_png(Path(vorlage), row)
+            ziel = Path(ausgabe).with_suffix(".png")
+            ziel.write_bytes(png)
+            out["vorschau"] = {"png": str(ziel), "bytes": len(png), "png_kopf": png[:8] == b"\x89PNG\r\n\x1a\n"}
+        except Exception as e:
+            out["vorschau"], out["ok"] = {"fehler": str(e)}, False
+    Path(ausgabe).parent.mkdir(parents=True, exist_ok=True)
+    Path(ausgabe).write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+    return out
 
 
 def _folder(raw, base: Path) -> Path | None:
@@ -122,7 +360,7 @@ def load_helper_config(path: str | Path) -> HelferConfig:
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except FileNotFoundError:
-        raise HelferConfigError(f"{path} nicht gefunden – „helfer.bat einrichten“ ausführen.")
+        raise HelferConfigError(f"{path} nicht gefunden – {einrichten_hinweis()} ausführen.")
     except (OSError, yaml.YAMLError) as e:
         raise HelferConfigError(f"{path} kann nicht gelesen werden: {e}")
     if not isinstance(raw, dict):
@@ -220,7 +458,7 @@ class PathMapper:
             return Path(target).joinpath(*parts)
         known = ", ".join(p for p, _ in self.items)
         raise PathError(f"Server-Pfad '{server_path}' ist in helfer.yaml unter 'pfade' nicht zugeordnet "
-                        f"(zugeordnet: {known}). Besser: 'vorlagen_ordner' einrichten (helfer.bat einrichten).")
+                        f"(zugeordnet: {known}). Besser: 'vorlagen_ordner' einrichten ({einrichten_hinweis()}).")
 
 
 # ------------------------------------------------------------------ Vorlagen-Cache
@@ -327,7 +565,7 @@ class HelferKern:
     # ----------------------------------------------------------- Vorlagen-Ordner
     def _require_folder(self) -> Path:
         if self.folder is None:
-            raise TemplateError("Auf diesem PC ist kein Vorlagen-Ordner eingerichtet (helfer.bat einrichten).")
+            raise TemplateError(f"Auf diesem PC ist kein Vorlagen-Ordner eingerichtet ({einrichten_hinweis()}).")
         if not self.folder.is_dir():
             raise TemplateError(f"Vorlagen-Ordner {self.folder} gibt es nicht (mehr).")
         return self.folder
@@ -454,7 +692,7 @@ class HelferKern:
         path = self.paths.translate(server_path)
         if not path.exists():
             raise PathError(f"{what} '{path}' (Server: {server_path}) gibt es auf diesem PC nicht – "
-                            f"Vorlagen-Ordner einrichten (helfer.bat einrichten) oder 'pfade' in helfer.yaml prüfen.")
+                            f"Vorlagen-Ordner einrichten ({einrichten_hinweis()}) oder 'pfade' in helfer.yaml prüfen.")
         return path
 
     def _csv(self, msg: dict) -> Path:
@@ -583,7 +821,7 @@ async def _session(ws, kern: HelferKern, cfg: HelferConfig) -> None:
     async def manifest_loop() -> None:
         if kern.folder is None:
             log.warning("Kein Vorlagen-Ordner eingerichtet – der Server nutzt seine eigenen Vorlagen "
-                        "(„helfer.bat einrichten“ zum Einrichten).")
+                        f"({einrichten_hinweis()} zum Einrichten).")
             return
         last = None
         while True:
@@ -713,22 +951,110 @@ async def run_forever(config_path: Path, kern_factory=HelferKern) -> None:
         backoff = min(backoff * 2, BACKOFF_MAX) if backoff < BACKOFF_MAX else backoff
 
 
-def main(argv: list[str] | None = None) -> None:
+HILFE = """\
+Labeltool-Druck-Helfer {version}
+
+Aufruf: python -m labeltool.helfer [helfer.yaml]      (installiert: LabeltoolHelfer.exe [helfer.yaml])
+        … --beenden                 laufenden Helfer zu dieser helfer.yaml beenden
+        … --diagnose AUSGABE.json [--vorlage X.lbx]   Selbsttest ohne Druck (b-PAC, Drucker,
+                                    Modellliste, Vorschau als PNG neben AUSGABE.json)
+        … --log DATEI               Protokoll zusätzlich in DATEI (1 MB × 3)
+
+Verbindet diesen Windows-PC (b-PAC, P-touch Editor, Etikettendrucker) mit dem Labeltool-Server
+und gleicht den Vorlagen-Ordner ab. Ohne Angabe wird helfer.yaml im aktuellen Ordner gelesen,
+installiert in %LOCALAPPDATA%\\Labeltool-Helfer\\ (dort auch helfer.log).
+Einrichten: {einrichten}. Beenden: Strg+C bzw. --beenden."""
+
+
+def _optionen(argv: list[str]) -> tuple[dict, list[str]]:
+    """Einfache Kommandozeile: --schalter bzw. --option WERT, Rest = Positionsargumente."""
+    mit_wert = ("--diagnose", "--vorlage", "--log")
+    opts, rest, i = {}, [], 0
+    while i < len(argv):
+        a = argv[i]
+        if a in mit_wert:
+            if i + 1 >= len(argv):
+                raise HelferConfigError(f"{a} braucht einen Wert.")
+            opts[a], i = argv[i + 1], i + 2
+            continue
+        if a.startswith("--"):
+            opts[a] = True
+        else:
+            rest.append(a)
+        i += 1
+    return opts, rest
+
+
+async def _laufen(path: Path, instanz: Einzelinstanz) -> bool:
+    """run_forever, bis das Ende-Ereignis kommt (-> True) bzw. Strg+C."""
+    loop = asyncio.get_running_loop()
+    task = asyncio.create_task(run_forever(path))
+    angefordert = threading.Event()
+
+    def waechter():
+        if instanz.warte_ende():
+            angefordert.set()
+            loop.call_soon_threadsafe(task.cancel)
+    threading.Thread(target=waechter, name="ende", daemon=True).start()
+    try:
+        await task
+    except asyncio.CancelledError:
+        if not angefordert.is_set():
+            raise
+    return angefordert.is_set()
+
+
+def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv and argv[0] in ("-h", "--help", "/?", "-?"):
-        print("Labeltool-Druck-Helfer " + __version__ + "\n\n"
-              "Aufruf: python -m labeltool.helfer [helfer.yaml]\n\n"
-              "Verbindet diesen Windows-PC (b-PAC, P-touch Editor, Etikettendrucker) mit dem Labeltool-Server\n"
-              "und gleicht den Vorlagen-Ordner ab. Ohne Angabe wird helfer.yaml im aktuellen Ordner gelesen.\n"
-              "Einrichten: helfer.bat einrichten. Beenden: Strg+C.")
-        return
-    path = Path(argv[0]) if argv else Path("helfer.yaml")
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(message)s", datefmt="%H:%M:%S")
-    logging.getLogger("websockets").setLevel(logging.WARNING)
+        text = HILFE.format(version=__version__, einrichten=einrichten_hinweis())
+        if sys.stdout is not None:
+            print(text)
+        else:
+            meldung(text)
+        return 0
+    try:
+        opts, rest = _optionen(argv)
+    except HelferConfigError as e:
+        meldung(str(e))
+        return 2
+    path = Path(rest[0]) if rest else standard_konfig()
+    log_datei = Path(opts["--log"]) if "--log" in opts else (path.parent / LOG_DATEI if gepackt() else None)
+    nebenbei = "--beenden" in opts or "--diagnose" in opts
+    if nebenbei and "--log" not in opts and log_datei is not None and not log_datei.parent.is_dir():
+        log_datei = None    # Setup/Deinstallation: keinen Benutzerordner nur fürs Protokoll anlegen
+    logging_einrichten(log_datei, rotation=not nebenbei)   # rotieren darf nur der laufende Helfer
+
+    if "--beenden" in opts:
+        r = helfer_beenden(path)
+        log.info({None: "Kein laufender Helfer für %s.", True: "Laufender Helfer für %s beendet.",
+                  False: "Laufender Helfer für %s reagiert nicht."}[r], path.resolve())
+        return 1 if r is False else 0
+    if "--diagnose" in opts:
+        vorlage = Path(opts["--vorlage"]) if "--vorlage" in opts else None
+        return 0 if diagnose(Path(opts["--diagnose"]), vorlage).get("ok") else 1
+
     if not path.exists():
+        if gepackt():
+            log.error("Konfiguration nicht gefunden: %s – der Helfer ist noch nicht eingerichtet.", path.resolve())
+            if meldung("Der Labeltool Druck-Helfer ist auf diesem PC noch nicht eingerichtet.\n\n"
+                       "Jetzt den Einrichtungs-Assistenten öffnen?", frage=True):
+                setup_starten(path)
+            return 2
         sys.exit(f"Konfiguration nicht gefunden: {path.resolve()}\n"
                  f"„helfer.bat einrichten“ ausführen (oder helfer.example.yaml nach helfer.yaml kopieren).")
-    log.info("Labeltool-Druck-Helfer %s – Konfiguration %s (Beenden mit Strg+C)", __version__, path.resolve())
+
+    instanz = Einzelinstanz(path)
+    if not instanz.erwerben():
+        text = f"Der Druck-Helfer läuft bereits (Konfiguration {path.resolve()})."
+        log.warning(text)
+        if gepackt():
+            meldung(text + "\n\nNeu starten: Startmenü → „Druck-Helfer einrichten“ → „Speichern & starten“.")
+            return 0
+        sys.exit(text)
+
+    log.info("Labeltool-Druck-Helfer %s – Konfiguration %s%s", __version__, path.resolve(),
+             "" if gepackt() else " (Beenden mit Strg+C)")
     try:
         cfg = load_helper_config(path)
         if cfg.vorlagen_ordner:
@@ -737,11 +1063,19 @@ def main(argv: list[str] | None = None) -> None:
                 log.info("Hinweis: 'pfade' in helfer.yaml wird mit Vorlagen-Ordner nicht mehr benötigt.")
     except HelferConfigError:
         pass   # meldet run_forever verständlich
+    angefordert = False
     try:
-        asyncio.run(run_forever(path))
+        angefordert = asyncio.run(_laufen(path, instanz))
     except KeyboardInterrupt:
         log.info("Helfer beendet.")
+    finally:
+        instanz.freigeben()
+    if angefordert:
+        log.info("Helfer beendet (angefordert von Einrichtung/Update).")
+        logging.shutdown()
+        os._exit(0)    # ein hängender b-PAC-Aufruf soll das Beenden nicht aufhalten
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

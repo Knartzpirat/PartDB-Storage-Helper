@@ -385,3 +385,89 @@ def test_modulgraph_folgt_importen(tmp_path):
     (tmp_path / "helfer.bat").write_text("a\nb\n"); (tmp_path / "helfer-autostart.bat").write_text("c")
     with pytest.raises(RuntimeError, match="fastapi"):
         rd.baue_zip("http://x", "t", pkg, tmp_path)
+
+
+# ------------------------------------------------------------------ Installer-Download (Setup-Programm)
+@pytest.fixture
+def fake_setup(tmp_path, monkeypatch):
+    """Fake-Setup über LABELTOOL_INSTALLER; Projekt-Fallback auf einen leeren Ordner umgelenkt."""
+    monkeypatch.setattr(rd, "PROJEKT_DIR", tmp_path / "projekt")
+    setup = tmp_path / "dist" / "Labeltool-Helfer-Setup.exe"
+    setup.parent.mkdir()
+    setup.write_bytes(b"MZ" + os.urandom(300_000))                 # nicht komprimierbar, > 1 Block
+    monkeypatch.setenv(rd.INSTALLER_ENV, str(setup))
+    return setup
+
+
+def test_installer_zip_inhalt(tmp_path, fake_setup):
+    c, _ = app_mit_download(tmp_path, token="GEHEIM_123")
+    r = c.get("/api/helfer/installer")
+    assert r.status_code == 200 and r.headers["content-type"] == "application/zip"
+    assert 'filename="Labeltool-Helfer-Installer.zip"' in r.headers["content-disposition"]
+    assert r.headers["cache-control"] == "no-store" and int(r.headers["content-length"]) == len(r.content)
+    z = zipfile.ZipFile(io.BytesIO(r.content))
+    assert sorted(z.namelist()) == ["LIESMICH.txt", "Labeltool-Helfer-Setup.exe", "helfer.vorgabe.yaml"]
+    assert z.read("Labeltool-Helfer-Setup.exe") == fake_setup.read_bytes()
+    assert z.getinfo("Labeltool-Helfer-Setup.exe").compress_type == zipfile.ZIP_STORED
+    assert yaml.safe_load(z.read("helfer.vorgabe.yaml")) == {"server": "http://testserver", "token": "GEHEIM_123"}
+    liesmich = z.read("LIESMICH.txt").decode("utf-8")
+    assert "\r\n" in liesmich and "\n" not in liesmich.replace("\r\n", "")
+    for text in ("http://testserver", "Weitere Informationen", "Trotzdem ausführen", "%LOCALAPPDATA%\Labeltool-Helfer\\",
+                 "Deinstallieren", "Update"):
+        assert text in liesmich
+    # temporäre ZIP-Datei wird nach dem Senden gelöscht
+    import tempfile
+    assert not list(Path(tempfile.gettempdir()).glob("labeltool-installer-*.zip"))
+
+
+def test_installer_vorgabe_aus_x_forwarded_und_token_erzeugt(tmp_path, fake_setup):
+    c, cfg = app_mit_download(tmp_path, token="")
+    r = c.get("/api/helfer/installer", headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "nas",
+                                                 "X-Forwarded-Port": "8443", "X-Forwarded-Prefix": "/labeltool"})
+    z = zipfile.ZipFile(io.BytesIO(r.content))
+    v = yaml.safe_load(z.read("helfer.vorgabe.yaml"))
+    assert v["server"] == "https://nas:8443/labeltool"
+    assert len(v["token"]) >= 40 and v["token"] == cfg.helper_token                # gleicher Weg wie /download
+    assert load_settings(cfg.settings_file)["helfer"]["token"] == v["token"]
+    assert "https://nas:8443/labeltool" in z.read("LIESMICH.txt").decode("utf-8")
+
+
+def test_installer_fehlt_404_und_info(tmp_path, monkeypatch):
+    monkeypatch.setattr(rd, "PROJEKT_DIR", tmp_path / "projekt")
+    monkeypatch.setattr(rd, "INSTALLER_STANDARD", tmp_path / "gibtsnicht" / rd.SETUP_NAME)
+    monkeypatch.delenv(rd.INSTALLER_ENV, raising=False)
+    c, cfg = app_mit_download(tmp_path, token="")
+    r = c.get("/api/helfer/installer")
+    assert r.status_code == 404 and "Installer" in r.json()["detail"] and "ohne Installation" in r.json()["detail"]
+    assert c.get("/api/helfer/installer/info").json() == {"installer_verfuegbar": False}
+    assert cfg.helper_token == ""                                                 # 404/Info erzeugen keinen Token
+    # Env zeigt auf fehlende Datei -> kein Rückgriff auf andere Orte
+    lokal = tmp_path / "projekt" / "installer" / "dist" / rd.SETUP_NAME
+    lokal.parent.mkdir(parents=True)
+    lokal.write_bytes(b"MZ")
+    assert rd.installer_info()["installer_verfuegbar"]                            # lokaler Fallback ohne Env
+    monkeypatch.setenv(rd.INSTALLER_ENV, str(tmp_path / "fehlt.exe"))
+    assert c.get("/api/helfer/installer").status_code == 404
+    assert not rd.installer_info()["installer_verfuegbar"]
+    (tmp_path / "leer.exe").write_bytes(b"")
+    monkeypatch.setenv(rd.INSTALLER_ENV, str(tmp_path / "leer.exe"))              # leere Datei zählt nicht
+    assert not rd.installer_info()["installer_verfuegbar"]
+
+
+def test_installer_info_verfuegbar(tmp_path, fake_setup):
+    c, cfg = app_mit_download(tmp_path, token="")
+    info = c.get("/api/helfer/installer/info").json()
+    assert info["installer_verfuegbar"] is True and info["installer_groesse"] == fake_setup.stat().st_size
+    assert info["installer_stand"][:4].isdigit() and str(fake_setup) not in json.dumps(info)
+    assert rd.installer_info(cfg) == info and cfg.helper_token == ""
+
+
+def test_installer_standardort_im_image(tmp_path, monkeypatch):
+    monkeypatch.delenv(rd.INSTALLER_ENV, raising=False)
+    monkeypatch.setattr(rd, "PROJEKT_DIR", tmp_path / "projekt")
+    assert rd.INSTALLER_STANDARD.as_posix() == "/app/helfer-installer/Labeltool-Helfer-Setup.exe"
+    std = tmp_path / "app" / rd.SETUP_NAME
+    std.parent.mkdir()
+    std.write_bytes(b"MZ123")
+    monkeypatch.setattr(rd, "INSTALLER_STANDARD", std)
+    assert rd.installer_pfad() == std

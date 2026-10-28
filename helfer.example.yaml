@@ -1,5 +1,8 @@
 # Druck-Helfer für Windows (python -m labeltool.helfer helfer.yaml bzw. helfer.bat)
-# Normalerweise schreibt der Einrichtungs-Assistent diese Datei (helfer.bat bzw. "helfer.bat einrichten").
+# Normalerweise schreibt der Einrichtungs-Assistent diese Datei (Startmenü "Druck-Helfer einrichten"
+# bzw. helfer.bat / "helfer.bat einrichten").
+# Ort: beim installierten Helfer (Setup) %LOCALAPPDATA%\Labeltool-Helfer\helfer.yaml
+# (dort auch Zwischenspeicher und helfer.log); bei der Python-Variante neben helfer.bat.
 # Von Hand: nach helfer.yaml kopieren und ausfüllen. Der Helfer verbindet sich selbst mit dem
 # Server – am PC muss kein Port geöffnet werden. Änderungen wirken beim nächsten Verbindungsversuch.
 

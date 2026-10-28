@@ -91,6 +91,7 @@
   .card h3 { margin: 0; font-size: 15px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .muted { color: var(--muted); font-size: 13px; }
   .steps { margin: 8px 0 0; padding-left: 20px; color: var(--muted); font-size: 13px; }
+  #set-helfer summary { cursor: pointer; font-size: 14px; color: var(--muted); }
   .undobar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 14px; border-radius: 8px;
              background: var(--warn-bg); color: var(--warn); margin-bottom: 16px; }
   .undobar[hidden] { display: none; }
@@ -343,20 +344,37 @@
     <div class="panel" id="set-helfer" tabindex="-1">
       <h2>Druck-Helfer <span class="muted">Windows-PC mit P-touch Editor und Drucker</span></h2>
       <dl class="kv" id="s-helper-info"></dl>
+      <div id="s-inst" hidden>
+        <div class="row">
+          <a class="btn primary" id="s-inst-dl" href="/api/helfer/installer" download="Labeltool-Helfer-Installer.zip">Installer herunterladen (empfohlen)</a>
+        </div>
+        <ol class="steps" id="s-inst-steps">
+          <li>ZIP herunterladen und <strong>entpacken</strong> (Rechtsklick → „Alle extrahieren …“) – Setup und <span class="mono">helfer.vorgabe.yaml</span> müssen im selben Ordner liegen.</li>
+          <li><span class="mono">Labeltool-Helfer-Setup.exe</span> starten. Meldet Windows SmartScreen „Der Computer wurde durch Windows geschützt“: „Weitere Informationen“ → „Trotzdem ausführen“; die Rückfrage nach Administratorrechten mit „Ja“ bestätigen.</li>
+          <li>Installieren (Autostart ist voreingestellt). Am Ende öffnet sich der Assistent: Server und Token sind schon eingetragen – Vorlagen-Ordner und Druckermodell wählen, „Speichern &amp; starten“.</li>
+          <li>Später ändern: Startmenü → „Druck-Helfer einrichten“. Update: neues Setup drüber installieren. Voraussetzungen: P-touch Editor, b-PAC Client (64 bit) – kein Python nötig.</li>
+        </ol>
+      </div>
+      <p class="hint" id="s-inst-none" hidden>Auf diesem Server liegt kein Windows-Installer (z. B. selbst gebautes Image). Den Helfer gibt es hier als Python-Paket; der Installer ist bei den Versionen auf GitHub als Release-Asset erhältlich.</p>
+      <details id="s-alt" style="margin-top:10px">
+        <summary id="s-alt-sum">Alternative ohne Installation (Python nötig)</summary>
+        <div class="row">
+          <a class="btn" id="s-helper-dl" href="/api/helfer/download" download="Labeltool-Helfer.zip">Helfer als Python-Paket herunterladen</a>
+        </div>
+        <ol class="steps" id="s-helper-steps">
+          <li>ZIP herunterladen und in einen festen Ordner entpacken (z. B. <span class="mono">C:\Labeltool-Helfer</span>).</li>
+          <li><span class="mono">helfer.bat</span> doppelklicken – beim ersten Start wird Python eingerichtet, dann öffnet sich der Assistent.</li>
+          <li>Im Assistenten Vorlagen-Ordner und Druckermodell wählen (Server und Token sind schon eingetragen), „Speichern &amp; starten“.</li>
+          <li>Später ändern: <span class="mono">helfer.bat einrichten</span>. Voraussetzungen: Python 3, P-touch Editor, b-PAC Client (64 bit).</li>
+        </ol>
+      </details>
       <div class="row">
-        <a class="btn primary" id="s-helper-dl" href="/api/helfer/download" download="Labeltool-Helfer.zip">Helfer herunterladen (Windows)</a>
         <button type="button" class="btn" id="s-newtoken">Helfer-Token neu erzeugen …</button>
       </div>
-      <ol class="steps" id="s-helper-steps">
-        <li>ZIP herunterladen und in einen festen Ordner entpacken (z. B. <span class="mono">C:\Labeltool-Helfer</span>).</li>
-        <li><span class="mono">helfer.bat</span> doppelklicken – beim ersten Start wird Python eingerichtet, dann öffnet sich der Assistent.</li>
-        <li>Im Assistenten Vorlagen-Ordner und Druckermodell wählen (Server und Token sind schon eingetragen), „Speichern &amp; starten“.</li>
-        <li>Später ändern: <span class="mono">helfer.bat einrichten</span>. Voraussetzungen: Python 3, P-touch Editor, b-PAC Client (64 bit).</li>
-      </ol>
-      <p class="hint" style="margin-top:6px">Das Paket enthält den aktuellen Helfer-Token (gibt es noch keinen, wird er beim Herunterladen erzeugt) – nicht weitergeben.</p>
+      <p class="hint" style="margin-top:6px">Beide Downloads enthalten die Server-Adresse und den aktuellen Helfer-Token (gibt es noch keinen, wird er beim Herunterladen erzeugt) – nicht weitergeben.</p>
       <div class="secret" id="s-secret" hidden>
         <strong>Neuer Helfer-Token</strong>
-        <p class="muted" style="margin:2px 0 8px">Wird nur jetzt angezeigt. In <span class="mono">helfer.yaml</span> am Windows-PC eintragen und den Helfer neu starten – oder den Helfer neu herunterladen, in denselben Ordner entpacken und <span class="mono">helfer.bat einrichten</span> ausführen.</p>
+        <p class="muted" style="margin:2px 0 8px">Wird nur jetzt angezeigt. Am Windows-PC im Assistenten eintragen (Startmenü → „Druck-Helfer einrichten“ bzw. <span class="mono">helfer.bat einrichten</span>) – oder den Installer neu herunterladen und erneut installieren. Von Hand: in <span class="mono">helfer.yaml</span> eintragen (installiert: <span class="mono">%LOCALAPPDATA%\Labeltool-Helfer\</span>) und den Helfer neu starten.</p>
         <label for="s-tok-out">Token</label>
         <div class="pwwrap"><input id="s-tok-out" readonly spellcheck="false">
           <button type="button" class="btn" id="s-tok-copy">Kopieren</button></div>
@@ -444,7 +462,7 @@ const helperMissing = () => STATUS?.helfer?.modus === "helfer" && !STATUS.helfer
 function printGate() {
   if (!PRINT.aktiv) return {ok: false, grund: PRINT.grund || "Direktdruck ist ausgeschaltet (Einstellungen → Druck)."};
   const d = STATUS?.drucker;
-  if (helperMissing()) return {ok: false, grund: "Druck-Helfer ist nicht verbunden – am Windows-PC den Helfer (helfer.bat) starten."};
+  if (helperMissing()) return {ok: false, grund: "Druck-Helfer ist nicht verbunden – am Windows-PC den Druck-Helfer starten (Startmenü „Labeltool Druck-Helfer“ bzw. helfer.bat)."};
   if (d && d.angeschlossen === false)
     return {ok: false, grund: `Drucker${d.name ? " „" + d.name + "“" : ""} ist nicht angeschlossen oder ausgeschaltet${d.status_text ? " (" + d.status_text + ")" : ""}.`};
   if (d && d.angeschlossen === true && d.bereit === false) return {ok: false, grund: `Drucker nicht bereit: ${d.status_text || "unbekannter Zustand"}`};
@@ -1294,6 +1312,18 @@ async function loadSettings() {
   clearMsg("#m-settings");
   settingsControls().forEach(x => x.disabled = false);
   SET = r; renderSettings();
+  loadInstallerInfo();
+}
+// Installer (Setup) als Hauptweg, Python-Paket als Alternative; ohne Installer nur die Alternative
+async function loadInstallerInfo() {
+  let ok = null;
+  try { ok = !!(await call("GET", "/api/helfer/installer/info")).installer_verfuegbar; }
+  catch (e) { ok = typeof META?.installer_verfuegbar === "boolean" ? META.installer_verfuegbar : false; }
+  $("#s-inst").hidden = !ok;
+  $("#s-inst-none").hidden = ok;
+  $("#s-alt").open = !ok;
+  $("#s-alt-sum").textContent = ok ? "Alternative ohne Installation (Python nötig)" : "Helfer ohne Installation (Python nötig)";
+  $("#s-helper-dl").classList.toggle("primary", !ok);
 }
 function renderSettings() {
   const p = SET.partdb || {}, d = SET.druck || {};
@@ -1423,7 +1453,7 @@ function helperYaml(token) {
   const h = STATUS?.helfer || {}, v = h.vorlagen && typeof h.vorlagen === "object" ? h.vorlagen : {};
   const ordner = v.ordner || "C:\\Users\\Name\\Documents\\Labeltool-Vorlagen";
   return [
-    "# helfer.yaml – am Windows-PC neben helfer.bat (oder \"helfer.bat einrichten\")",
+    "# helfer.yaml – installiert in %LOCALAPPDATA%\\Labeltool-Helfer\\, sonst neben helfer.bat",
     `server: ${JSON.stringify(location.origin)}`,
     `token: ${JSON.stringify(token)}`,
     `vorlagen_ordner: '${ordner.replace(/'/g, "''")}'   # Quelle der .lbx-Vorlagen auf dem PC`,

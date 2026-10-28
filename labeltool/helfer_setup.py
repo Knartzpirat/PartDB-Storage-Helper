@@ -2,6 +2,9 @@
 
 Start: python -m labeltool.helfer_setup [--aus-bat] [--konsole] [helfer.yaml]
        (helfer.bat ruft ihn auf, wenn helfer.yaml fehlt, oder mit "helfer.bat einrichten")
+       installiert: LabeltoolHelferSetup.exe [--vorgabe DATEI] [--autostart ja|nein] [--nach-installation]
+       [helfer.yaml] – ohne Angabe %LOCALAPPDATA%\\Labeltool-Helfer\\helfer.yaml. Das Setup übergibt
+       helfer.vorgabe.yaml aus dem Ordner der Setup-Datei und die Wahl der Autostart-Aufgabe.
 
 Fragt Server-Adresse, Helfer-Token, Vorlagen-Ordner auf diesem PC, Druckermodell und Autostart
 ab und schreibt helfer.yaml. Vorbelegt aus helfer.vorgabe.yaml (liegt im Download-Paket, enthält
@@ -28,7 +31,7 @@ from urllib.parse import urlsplit
 
 import yaml
 
-from . import ptouch_modelle
+from . import helfer, ptouch_modelle
 
 DATEI = "helfer.yaml"
 VORGABE = "helfer.vorgabe.yaml"
@@ -85,15 +88,23 @@ def ordner_vorschlag() -> Path:
     return dokumente_ordner() / ORDNER_NAME
 
 
-def lade_werte(ordner: Path) -> Werte:
+def vorgabe_suchen(ordner: Path, vorgabe: str | Path | None = None) -> Path:
+    """helfer.vorgabe.yaml: ausdrücklich angegeben (Setup: Ordner der Setup-Datei), sonst neben helfer.yaml."""
+    if vorgabe and Path(vorgabe).is_file():
+        return Path(vorgabe)
+    return Path(ordner) / VORGABE
+
+
+def lade_werte(ordner: Path, vorgabe: str | Path | None = None) -> Werte:
     """Vorbelegung aus helfer.yaml und helfer.vorgabe.yaml.
 
     Server/Token: aus der neueren der beiden Dateien (ein frisch heruntergeladenes Paket bringt
     den aktuellen Token mit), alles andere aus helfer.yaml, sonst Vorschläge.
     """
     ordner = Path(ordner)
-    vorgabe, bisher = _yaml_laden(ordner / VORGABE), _yaml_laden(ordner / DATEI)
-    vorne, hinten = (vorgabe, bisher) if vorgabe and _mtime(ordner / VORGABE) > _mtime(ordner / DATEI) \
+    vorgabe_datei = vorgabe_suchen(ordner, vorgabe)
+    vorgabe, bisher = _yaml_laden(vorgabe_datei), _yaml_laden(ordner / DATEI)
+    vorne, hinten = (vorgabe, bisher) if vorgabe and _mtime(vorgabe_datei) > _mtime(ordner / DATEI) \
         else (bisher, vorgabe)
 
     def wert(key: str, *quellen: dict) -> str:
@@ -223,7 +234,7 @@ def _q(value: str) -> str:
 
 def yaml_text(w: Werte) -> str:
     lines = [
-        "# Druck-Helfer – geschrieben vom Einrichtungs-Assistenten (helfer.bat einrichten).",
+        f"# Druck-Helfer – geschrieben vom Einrichtungs-Assistenten ({helfer.einrichten_hinweis()}).",
         "# Kann auch von Hand geändert werden; der Helfer liest die Datei bei jedem Verbindungsaufbau neu.",
         "",
         "# Adresse des Labeltool-Servers (wie im Browser)",
@@ -272,12 +283,26 @@ def autostart_ordner() -> Path:
 _PS_VERKNUEPFUNG = (
     "$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:LT_LNK);"
     "$s.TargetPath = $env:LT_ZIEL; $s.WorkingDirectory = $env:LT_ORDNER;"
-    "$s.WindowStyle = 7; $s.Description = 'Labeltool Druck-Helfer'; $s.Save()"
+    "$s.Arguments = $env:LT_ARGS; $s.WindowStyle = 7; $s.Description = 'Labeltool Druck-Helfer'; $s.Save()"
 )
 
 
-def autostart_setzen(an: bool, bat: Path, ordner: Path | None = None, runner=subprocess.run) -> Path:
-    """Verknüpfung „Labeltool Druck-Helfer“ (startet helfer.bat minimiert) anlegen bzw. entfernen."""
+def autostart_ziel(ordner: Path) -> Path:
+    """Was der Autostart startet: installiert LabeltoolHelfer.exe, sonst helfer.bat neben helfer.yaml."""
+    return helfer.programm_ordner() / helfer.EXE_HELFER if helfer.gepackt() else Path(ordner) / "helfer.bat"
+
+
+def _helfer_argumente(config: Path | None) -> list[str]:
+    """Installiert: helfer.yaml nur angeben, wenn es nicht die Standarddatei ist."""
+    if config is None or Path(config).resolve() == helfer.standard_konfig(True).resolve():
+        return []
+    return [str(Path(config).resolve())]
+
+
+def autostart_setzen(an: bool, bat: Path, ordner: Path | None = None, runner=subprocess.run,
+                     argumente: str = "") -> Path:
+    """Verknüpfung „Labeltool Druck-Helfer“ anlegen bzw. entfernen. `bat` ist das Ziel: helfer.bat
+    (startet minimiert) bzw. installiert LabeltoolHelfer.exe (ohne Fenster)."""
     lnk = Path(ordner or autostart_ordner()) / AUTOSTART_NAME
     if not an:
         try:
@@ -287,7 +312,7 @@ def autostart_setzen(an: bool, bat: Path, ordner: Path | None = None, runner=sub
         return lnk
     bat = Path(bat).resolve()
     lnk.parent.mkdir(parents=True, exist_ok=True)
-    env = dict(os.environ, LT_LNK=str(lnk), LT_ZIEL=str(bat), LT_ORDNER=str(bat.parent))
+    env = dict(os.environ, LT_LNK=str(lnk), LT_ZIEL=str(bat), LT_ORDNER=str(bat.parent), LT_ARGS=argumente)
     try:
         r = runner(["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command",
                     _PS_VERKNUEPFUNG], env=env, capture_output=True, text=True, timeout=30,
@@ -299,8 +324,15 @@ def autostart_setzen(an: bool, bat: Path, ordner: Path | None = None, runner=sub
     return lnk
 
 
-def helfer_starten(ordner: Path, popen=subprocess.Popen) -> None:
-    """helfer.bat in einem eigenen Konsolenfenster starten."""
+def helfer_starten(ordner: Path, popen=subprocess.Popen, config: Path | None = None) -> None:
+    """Installiert: LabeltoolHelfer.exe im Hintergrund starten, sonst helfer.bat in einem eigenen Konsolenfenster."""
+    if helfer.gepackt():
+        exe = helfer.programm_ordner() / helfer.EXE_HELFER
+        if not exe.is_file():
+            raise SetupFehler(f"{exe} fehlt – bitte den Druck-Helfer neu installieren.")
+        popen([str(exe), *_helfer_argumente(config)], cwd=str(exe.parent), close_fds=True,
+              creationflags=getattr(subprocess, "DETACHED_PROCESS", 0))
+        return
     bat = Path(ordner) / "helfer.bat"
     if not bat.is_file():
         raise SetupFehler(f"{bat} fehlt – bitte das Helfer-Paket vollständig entpacken.")
@@ -309,8 +341,10 @@ def helfer_starten(ordner: Path, popen=subprocess.Popen) -> None:
 
 
 def speichern(ordner: Path, w: Werte, aus_bat: bool = False, autostart_dir: Path | None = None,
-              runner=subprocess.run, popen=subprocess.Popen) -> list[str]:
-    """helfer.yaml schreiben, Ordner anlegen, Autostart setzen, Helfer starten -> Meldungen."""
+              runner=subprocess.run, popen=subprocess.Popen, beenden=None) -> list[str]:
+    """helfer.yaml schreiben, Ordner anlegen, Autostart setzen, laufenden Helfer beenden und
+    (außer beim Aufruf aus helfer.bat, die ihn danach selbst startet) neu starten -> Meldungen."""
+    beenden = beenden or helfer.helfer_beenden
     ordner = Path(ordner)
     w.server = normalisiere_server(w.server)
     w.drucker_modell = (w.drucker_modell or "").strip().upper()
@@ -320,11 +354,17 @@ def speichern(ordner: Path, w: Werte, aus_bat: bool = False, autostart_dir: Path
         Path(w.vorlagen_ordner).mkdir(parents=True, exist_ok=True)
     except OSError as e:
         raise SetupFehler(f"Vorlagen-Ordner nicht angelegt: {e}")
-    lnk = autostart_setzen(w.autostart, ordner / "helfer.bat", autostart_dir, runner=runner)
+    lnk = autostart_setzen(w.autostart, autostart_ziel(ordner), autostart_dir, runner=runner,
+                           argumente=subprocess.list2cmdline(_helfer_argumente(path)) if helfer.gepackt() else "")
     out.append(f"Autostart eingerichtet: {lnk}" if w.autostart else "Kein Autostart.")
+    lief = beenden(path)                 # neue Einstellungen sofort wirksam: laufenden Helfer neu starten
+    if lief is True:
+        out.append("Laufender Helfer beendet.")
+    elif lief is False:
+        out.append("Der laufende Helfer reagiert nicht – bitte im Task-Manager beenden.")
     if not aus_bat:
-        helfer_starten(ordner, popen=popen)
-        out.append("Helfer gestartet.")
+        helfer_starten(ordner, popen=popen, config=path)
+        out.append("Helfer neu gestartet." if lief else "Helfer gestartet.")
     return out
 
 
@@ -657,24 +697,80 @@ def tkinter_verfuegbar() -> tuple[bool, str]:
         return False, str(e) or type(e).__name__
 
 
+def argumente(argv: list[str]) -> dict:
+    """Kommandozeile -> {"aus_bat", "konsole", "nach_installation", "vorgabe", "autostart", "datei"}."""
+    out = {"aus_bat": False, "konsole": False, "nach_installation": False, "vorgabe": None,
+           "autostart": None, "datei": None}
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a in ("--vorgabe", "--autostart"):
+            if i + 1 >= len(argv):
+                raise SetupFehler(f"{a} braucht einen Wert.")
+            wert = argv[i + 1]
+            if a == "--vorgabe":
+                out["vorgabe"] = wert or None
+            else:
+                if wert.strip().lower() not in ("ja", "nein", "1", "0", "true", "false"):
+                    raise SetupFehler(f"--autostart erwartet ja oder nein, nicht '{wert}'.")
+                out["autostart"] = wert.strip().lower() in ("ja", "1", "true")
+            i += 2
+            continue
+        if a.startswith("--"):
+            key = a[2:].replace("-", "_")
+            if key in ("aus_bat", "konsole", "nach_installation"):
+                out[key] = True
+        elif out["datei"] is None:
+            out["datei"] = a
+        i += 1
+    return out
+
+
+def nach_abbruch(path: Path, laeuft=None, starten=None) -> bool:
+    """Nach der Installation abgebrochen: Das Setup hat den Helfer für das Update beendet –
+    mit vorhandener helfer.yaml wieder starten. -> True, wenn gestartet."""
+    laeuft = laeuft or helfer.helfer_laeuft
+    starten = starten or (lambda p: helfer_starten(p.parent, config=p))
+    if not Path(path).is_file() or laeuft(path):
+        return False
+    try:
+        starten(Path(path))
+    except (SetupFehler, OSError):
+        return False
+    return True
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
-    aus_bat = "--aus-bat" in argv
-    konsole = "--konsole" in argv
-    rest = [a for a in argv if not a.startswith("--")]
-    path = Path(rest[0]) if rest else Path(DATEI)
+    try:
+        args = argumente(argv)
+    except SetupFehler as e:
+        helfer.meldung(str(e))
+        return 2
+    aus_bat, konsole = args["aus_bat"], args["konsole"]
+    path = Path(args["datei"]) if args["datei"] else helfer.standard_konfig()
     ordner = path.resolve().parent
-    werte = lade_werte(ordner)
+    werte = lade_werte(ordner, args["vorgabe"])
+    if args["autostart"] is not None:
+        werte.autostart = args["autostart"]
     if not konsole:
         ok, grund = tkinter_verfuegbar()
         if not ok:
+            if helfer.gepackt():          # installiert gibt es keine Konsole
+                helfer.meldung(f"Das Einrichtungsfenster kann nicht geöffnet werden: {grund}")
+                return 1
             print(f"Fenster nicht verfügbar ({grund}) – Einrichtung in der Konsole.")
             konsole = True
     try:
         done = konsole_assistent(ordner, werte, aus_bat) if konsole else fenster_assistent(ordner, werte, aus_bat)
     except SetupFehler as e:
-        print(f"FEHLER: {e}")
+        if helfer.gepackt():
+            helfer.meldung(f"FEHLER: {e}")
+        else:
+            print(f"FEHLER: {e}")
         done = False
+    if not done and args["nach_installation"]:
+        nach_abbruch(path)
     return 0 if done else 1
 
 

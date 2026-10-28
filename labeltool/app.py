@@ -177,6 +177,7 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
             "box_vorlage": cfg.box_template,
             "partdb": cfg.partdb_url,
             "bpac_vorschau": vorlagen.preview_available(printer),
+            "installer_verfuegbar": routes_helfer_download.installer_info(cfg)["installer_verfuegbar"],
         }
 
     @app.post("/api/open-output")

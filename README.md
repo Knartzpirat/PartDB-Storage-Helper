@@ -147,30 +147,48 @@ Vorgeschlagene Pfade: `/mnt/user/appdata/labeltool/{config,ausgabe,vorlagen}`. U
 
 ### Druck-Helfer unter Windows
 
+Der Druck-Helfer wird mit einem Setup installiert – Python ist dafür nicht nötig. Voraussetzungen am PC: Windows 10/11
+(64 bit), Brother P-touch Editor mit dem Druckertreiber und die
+[b-PAC Client Component](https://support.brother.com/g/s/es/dev/en/bpac/download/index.html) (64 bit).
+
 1. Labeltool im Browser **unter der Adresse öffnen, die der PC später verwenden soll** (z. B.
-   `http://unraid:8765`, nicht `localhost`) → *Einstellungen → Druck-Helfer* → **„Helfer herunterladen (Windows)“**.
-   Das ZIP enthält den Helfer, die Server-Adresse und den Helfer-Token – nicht weitergeben.
-2. ZIP in einen festen Ordner entpacken (z. B. `C:\Labeltool-Helfer`) und **`helfer.bat`** doppelklicken.
-   Beim ersten Start wird eine Python-Umgebung eingerichtet (1–2 Minuten), danach öffnet sich der
-   **Einrichtungs-Assistent**:
+   `http://unraid:8765`, nicht `localhost`) → *Einstellungen → Druck-Helfer* → **„Installer herunterladen
+   (empfohlen)“**. Das ZIP `Labeltool-Helfer-Installer.zip` enthält `Labeltool-Helfer-Setup.exe`,
+   `helfer.vorgabe.yaml` (Server-Adresse und Helfer-Token – nicht weitergeben) und eine `LIESMICH.txt`.
+   Das Setup gibt es außerdem bei jeder [Version](../../releases) als Release-Asset; dann Server und Token im
+   Assistenten von Hand eintragen.
+2. ZIP **entpacken** (Setup und `helfer.vorgabe.yaml` müssen im selben Ordner liegen) und
+   `Labeltool-Helfer-Setup.exe` starten.
+   - Das Setup ist nicht digital signiert. Windows SmartScreen meldet deshalb „Der Computer wurde durch Windows
+     geschützt“: **„Weitere Informationen“ → „Trotzdem ausführen“**.
+   - Die Benutzerkontensteuerung fragt nach Administratorrechten, weil nach `C:\Program Files\Labeltool-Helfer\`
+     installiert wird.
+3. Das Setup legt im Startmenü den Ordner „Labeltool Druck-Helfer“ mit **„Labeltool Druck-Helfer“**,
+   **„Druck-Helfer einrichten“** und **„Deinstallieren“** an. Die Aufgabe **Autostart** (voreingestellt) startet den Helfer bei jeder Anmeldung des Benutzers unsichtbar im
+   Hintergrund.
+4. Am Ende öffnet sich der **Einrichtungs-Assistent**:
    - **Server und Token** sind vorbelegt; „Verbindung testen“ prüft beides.
    - **Vorlagen-Ordner:** Ordner mit deinen `.lbx`-Vorlagen auf diesem PC. Er ist die Quelle der Vorlagen (siehe
      [Vorlagen-Abgleich](#vorlagen-abgleich)). Ist er leer, holt der Helfer die Vorlagen vom Server.
    - **Druckermodell:** alle Modelle, die der installierte P-touch Editor kennt; installierte Drucker stehen oben und
      sind vorausgewählt. Fehlt der Treiber, gibt es einen Link zu Brother.
-   - **Autostart:** startet den Helfer bei der Anmeldung minimiert.
-3. **„Speichern & starten“.** In der Kopfzeile des Labeltools werden „Helfer“ und „Drucker“ grün.
+5. **„Speichern & starten“.** In der Kopfzeile des Labeltools werden „Helfer“ und „Drucker“ grün.
 
-Später ändern: `helfer.bat einrichten` (laufenden Helfer vorher schließen). Nach einem neuen Helfer-Token den Helfer
-erneut herunterladen, in denselben Ordner entpacken und `helfer.bat einrichten` ausführen – Ordner und Modell bleiben
-erhalten. Autostart entfernen: Häkchen im Assistenten abwählen oder `helfer-autostart.bat entfernen`.
+Einstellungen, Zwischenspeicher und Protokoll (`helfer.log`) liegen in **`%LOCALAPPDATA%\Labeltool-Helfer\`**.
+Später ändern: Startmenü → „Druck-Helfer einrichten“. Nach einem neuen Helfer-Token den Installer erneut
+herunterladen und installieren oder den Token im Assistenten eintragen – Ordner und Modell bleiben erhalten.
 
-Die Einstellungen stehen in `helfer.yaml`:
+**Update:** neues Setup herunterladen und über die bestehende Installation installieren; die Einstellungen bleiben.
+**Deinstallieren:** Windows-Einstellungen → *Apps* → *Installierte Apps* → „Labeltool Druck-Helfer“ (oder
+Startmenü → „Deinstallieren“). Programm, Startmenü-Einträge und Autostart werden entfernt; den Ordner
+`%LOCALAPPDATA%\Labeltool-Helfer\` danach bei Bedarf von Hand löschen.
+
+Die Einstellungen stehen in `helfer.yaml` (Vorlage: [`helfer.example.yaml`](helfer.example.yaml)):
 
 ```yaml
 server: "http://unraid:8765"
 token: "…"
-vorlagen_ordner: "C:\\Users\\Name\\Documents\\Labeltool-Vorlagen"
+vorlagen_ordner: "C:\Users\Name\Documents\Labeltool-Vorlagen"
 drucker_modell: "PT-P710BT"
 drucker: "Brother PT-P710BT"    # leer = passend zum Modell suchen
 autostart: true
@@ -178,6 +196,13 @@ autostart: true
 
 Der Helfer baut die Verbindung nach Unterbrechungen selbst wieder auf. Es ist immer nur ein Helfer verbunden; ein neu
 verbundener ersetzt den alten.
+
+**Alternative ohne Installation (Python 3.11+ nötig):** *Einstellungen → Druck-Helfer → Alternative ohne
+Installation* lädt `Labeltool-Helfer.zip`. In einen festen Ordner entpacken (z. B. `C:\Labeltool-Helfer`) und
+`helfer.bat` doppelklicken – beim ersten Start wird eine Python-Umgebung eingerichtet (1–2 Minuten), danach öffnet
+sich derselbe Assistent. Hier liegt `helfer.yaml` neben `helfer.bat`; ändern mit `helfer.bat einrichten`, Autostart
+entfernen mit `helfer-autostart.bat entfernen`. Liegt auf dem Server kein Installer (z. B. selbst gebautes Image),
+bietet die Oberfläche nur diesen Weg an.
 
 ### Lokal unter Windows (ohne Docker)
 
@@ -343,4 +368,6 @@ docker build -t labeltool:latest .
 ```
 
 Server ohne Docker mit Umgebungsvariablen starten: `LABELTOOL_CONFIG` (Pfad zur `config.yaml`), `LABELTOOL_HOST`,
-`LABELTOOL_PORT`, `LABELTOOL_NO_BROWSER=1`.
+`LABELTOOL_PORT`, `LABELTOOL_NO_BROWSER=1`. `LABELTOOL_INSTALLER` zeigt auf die Setup-Datei, die unter
+*Einstellungen → Druck-Helfer* angeboten wird (Standard: `/app/helfer-installer/Labeltool-Helfer-Setup.exe` im Image,
+sonst `installer/dist/Labeltool-Helfer-Setup.exe` im Projekt).

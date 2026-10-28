@@ -10,6 +10,8 @@ env/
 .coverage
 htmlcov/
 tests/
+# Installer-Bau (Setup kommt per --build-context helfer-installer=… ins Image)
+installer/
 .git/
 .gitignore
 .vscode/
