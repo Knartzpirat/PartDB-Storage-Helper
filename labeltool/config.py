@@ -69,6 +69,8 @@ class Config:
     direct_print: bool = False          # Direktdruck über b-PAC anbieten
     printer: str = ""                   # Windows-Druckername, leer = Drucker aus der Vorlage
     cut_options: list[str] = field(default_factory=lambda: ["autocut", "cutatend"])
+    preview_dpi: int = 360              # Auflösung der b-PAC-Vorschau (höher = schärfer, langsamer)
+    print_quality: str = "standard"     # Direktdruck: standard | hoch (180×360) | hoch_langsam
     print_mode: str = "lokal"           # "lokal" = b-PAC im Prozess, "helfer" = über den Windows-Druck-Helfer
     helper_token: str = ""              # Token, mit dem sich der Druck-Helfer anmeldet
     settings_file: Path = field(default_factory=lambda: Path("einstellungen.yaml"))
@@ -168,6 +170,8 @@ def load_config(path: str | Path) -> Config:
         direct_print=bool(prn.get("direktdruck", False)),
         printer=str(prn.get("drucker") or ""),
         cut_options=[str(o) for o in (prn.get("schnitt") or ["autocut", "cutatend"])],
+        preview_dpi=int(prn.get("vorschau_dpi") or 360),
+        print_quality=str(prn.get("qualitaet") or "standard"),
         print_mode=str(prn.get("modus") or "lokal").strip().lower(),
         helper_token=str(hlp.get("token") or ""),
         settings_file=base / "einstellungen.yaml",

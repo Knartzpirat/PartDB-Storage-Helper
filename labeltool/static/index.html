@@ -350,6 +350,13 @@
           <div class="hint" id="s-printer-hint"></div></div>
       </div>
       <div class="row"><label class="check"><input type="checkbox" id="s-direct"> Direktdruck anbieten (ohne P-touch Editor)</label></div>
+      <div class="grid" style="margin-top:14px"><div><label for="s-quality">Druckqualität beim Direktdruck</label>
+        <select id="s-quality"></select>
+        <div class="hint">Hohe Auflösung druckt feinere Schrift und Barcodes (z. B. PT-P710BT 180 × 360 dpi), dauert etwas länger.
+          Modelle ohne hohe Auflösung drucken normal. Beim Druck über den P-touch Editor stellst du die Qualität dort im Druckdialog ein.</div></div></div>
+      <div class="grid" style="margin-top:14px"><div><label for="s-dpi">Vorschauqualität (exakte Vorschau über b-PAC)</label>
+        <select id="s-dpi"></select>
+        <div class="hint">Höher = schärfer, aber etwas langsamer. Der Druck selbst ist davon nicht betroffen.</div></div></div>
       <fieldset style="border:0;padding:0;margin:14px 0 0;min-width:0">
         <legend class="muted" style="padding:0;margin-bottom:6px">Schnittoptionen beim Direktdruck</legend>
         <div class="checks" id="s-cuts"></div>
@@ -1032,7 +1039,9 @@ async function showPreview(id, url, body, opts = {}) {
     if (!opts.widthPx) {
       // Ohne bekannte Labellänge: Skizzen (SVG in mm ≈ 3,8 px/mm) auf ähnliche Größe wie b-PAC-PNGs bringen
       const img = el.querySelector("img");
-      img.onload = () => { img.style.width = img.naturalWidth ? Math.round(img.naturalWidth * (art === "skizze" ? 2 : 1)) + "px" : "100%"; };
+      const dpi = SET?.druck?.vorschau_dpi || META?.vorschau_dpi || 360;
+      img.onload = () => { img.style.width = img.naturalWidth
+        ? Math.round(img.naturalWidth * (art === "skizze" ? 2 : 360 / dpi)) + "px" : "100%"; };
     }
   } catch (e) {
     if (seq !== st.seq || !el.isConnected) return;
@@ -1432,6 +1441,13 @@ function renderSettings() {
   modeHint();
   $("#s-direct").checked = !!d.direktdruck;
   fillPrinterSelect(d.drucker || "");
+  const qualityNames = {standard: "Standard (180 × 180 dpi)", hoch: "Hohe Auflösung (180 × 360 dpi)",
+                        hoch_langsam: "Hohe Auflösung, Qualität vor Tempo"};
+  $("#s-quality").innerHTML = (d.qualitaet_optionen || ["standard"]).map(v =>
+    `<option value="${esc(v)}"${v === (d.qualitaet || "standard") ? " selected" : ""}>${esc(qualityNames[v] || v)}</option>`).join("");
+  const dpiNames = {180: "Niedrig (180 dpi, wie der Drucker)", 360: "Standard (360 dpi)", 600: "Hoch (600 dpi)", 720: "Sehr hoch (720 dpi)"};
+  $("#s-dpi").innerHTML = (d.vorschau_dpi_optionen || [360]).map(v =>
+    `<option value="${v}"${v === d.vorschau_dpi ? " selected" : ""}>${esc(dpiNames[v] || v + " dpi")}</option>`).join("");
   const opts = d.schnitt_optionen?.length ? d.schnitt_optionen : Object.keys(CUT_LABELS);
   const sel = new Set(d.schnitt || []);
   $("#s-cuts").innerHTML = opts.map((o, i) => {
@@ -1510,7 +1526,8 @@ $("#set-druck").onsubmit = async e => {
   try {
     SET = await call("PUT", "/api/einstellungen/druck", {
       modus: $("#s-mode").value, direktdruck: $("#s-direct").checked, drucker: $("#s-printer").value,
-      schnitt: [...$("#s-cuts").querySelectorAll("input:checked")].map(x => x.value)});
+      schnitt: [...$("#s-cuts").querySelectorAll("input:checked")].map(x => x.value),
+      vorschau_dpi: +$("#s-dpi").value || null, qualitaet: $("#s-quality").value || null});
     renderSettings();
     msg("#m-set-druck", "Druckeinstellungen gespeichert.");
     afterSettingsChange();

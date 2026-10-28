@@ -18,10 +18,11 @@ Zusatzpaket in PNG umgewandelt.
 """
 from __future__ import annotations
 
+import contextlib
+import functools
 import os
 import re
 import struct
-import functools
 import tempfile
 import threading
 import time
@@ -38,6 +39,15 @@ CUT_OPTIONS = {
     "chainprint": 0x400,     # kein Vorschub am Ende -> spart Band beim nächsten Druck
     "tailcut": 0x800,
     "cutatend": 0x4000000,   # nach dem letzten Label schneiden
+}
+
+# Druckqualität (PrintOptionConstants aus der b-PAC-Typbibliothek): bpoHighResolution = 0x2000000
+# (z. B. PT-P710BT: 180 × 360 dpi statt 180 × 180), bpoQuality = 0x10000 (Qualität vor Tempo).
+# Modelle ohne hohe Auflösung drucken mit der Standardauflösung.
+QUALITY_OPTIONS = {
+    "standard": 0,
+    "hoch": 0x2000000,
+    "hoch_langsam": 0x2000000 | 0x10000,
 }
 
 # b-PAC ExportType (empirisch): 1 = .lbx, 2 = .lbl, 3 = .lbi, 4 = .bmp (1 bit, dpi frei
@@ -99,8 +109,10 @@ def com_init() -> None:
         _com_threads.ok = True
 
 
-def print_flags(names: list[str]) -> int:
-    flags = 0
+def print_flags(names: list[str], quality: str = "standard") -> int:
+    if quality not in QUALITY_OPTIONS:
+        raise BpacError(f"Unbekannte Druckqualität '{quality}'. Möglich: {', '.join(QUALITY_OPTIONS)}")
+    flags = QUALITY_OPTIONS[quality]
     for n in names:
         key = str(n).strip().lower()
         if key not in CUT_OPTIONS:
@@ -225,18 +237,88 @@ def status(printer: str) -> dict:
     return {"ok": True, "grund": "", "drucker": names, "hilfe_url": ""}
 
 
+# Symbole aus den Schriften "PTC Dingbats…" bringt nur der P-touch Editor 6 intern mit – Windows hat nur die
+# älteren "PT Dingbats", deren Zeichen dort fehlen. b-PAC zeichnet solche Symbole deshalb als leeres Kästchen.
+# Schmale, strichförmige Symbole (typisch: Trennstrich zwischen Feldern) ersetzen wir beim Rendern/Drucken
+# in einer temporären Kopie durch eine echte Linie. Die Originalvorlage bleibt unverändert.
+_CLIPART_RE = re.compile(r"<image:clipart>(?:(?!</image:clipart>).)*?originalName=\"FONT,PTC [^\"]*\""
+                         r"(?:(?!</image:clipart>).)*</image:clipart>", re.S)
+_STYLE_RE = re.compile(r'<pt:objectStyle x="([\d.]+)pt" y="([\d.]+)pt" width="([\d.]+)pt" height="([\d.]+)pt"')
+_NAME_RE = re.compile(r'objectName="([^"]*)"')
+LINE_RATIO = 0.35          # Breite/Höhe (bzw. umgekehrt) darunter gilt ein Symbol als Strich
+LINE_WIDTH = 0.5           # pt – wie die Linien in den eigenen Vorlagen
+
+
+def _line_xml(name: str, x: float, y: float, w: float, h: float) -> str:
+    """draw:poly-Linie mittig im Rahmen des Symbols (senkrecht oder waagerecht)."""
+    if h >= w:
+        x1 = x2 = x + w / 2
+        y1, y2 = y, y + h
+        box = (x1 - LINE_WIDTH / 2, y, LINE_WIDTH, h)
+    else:
+        y1 = y2 = y + h / 2
+        x1, x2 = x, x + w
+        box = (x, y1 - LINE_WIDTH / 2, w, LINE_WIDTH)
+    bx, by, bw, bh = (f"{v:.1f}pt" for v in box)
+    return (f'<draw:poly><pt:objectStyle x="{bx}" y="{by}" width="{bw}" height="{bh}" backColor="#FFFFFF" '
+            f'backPrintColorNumber="0" ropMode="COPYPEN" angle="0" anchor="TOPLEFT" flip="NONE">'
+            f'<pt:pen style="INSIDEFRAME" widthX="{LINE_WIDTH}pt" widthY="{LINE_WIDTH}pt" color="#000000" '
+            f'printColorNumber="1"></pt:pen><pt:brush style="NULL" color="#000000" printColorNumber="1" id="0">'
+            f'</pt:brush><pt:expanded objectName="{name}" ID="0" lock="2" templateMergeTarget="LABELLIST" '
+            f'templateMergeType="NONE" templateMergeID="0" allowOutOfBoundsTransfer="false" linkStatus="NONE" '
+            f'linkID="0"></pt:expanded></pt:objectStyle><draw:polyStyle shape="LINE" arrowBegin="SQUARE" '
+            f'arrowEnd="SQUARE"><draw:polyOrgPos x="{bx}" y="{by}" width="{bw}" height="{bh}"></draw:polyOrgPos>'
+            f'<draw:polyLinePoints points="{x1:.1f}pt,{y1:.1f}pt {x2:.1f}pt,{y2:.1f}pt"></draw:polyLinePoints>'
+            f'</draw:polyStyle></draw:poly>')
+
+
+def fix_symbols(xml: str) -> tuple[str, int]:
+    """Strichförmige PTC-Dingbats-Symbole durch Linien ersetzen. -> (xml, Anzahl ersetzt)."""
+    count = 0
+
+    def repl(m: re.Match) -> str:
+        nonlocal count
+        st = _STYLE_RE.search(m.group(0))
+        if not st:
+            return m.group(0)
+        x, y, w, h = (float(v) for v in st.groups())
+        if min(w, h) > LINE_RATIO * max(w, h):      # eher quadratisch -> echtes Symbol, nicht anfassen
+            return m.group(0)
+        count += 1
+        name = _NAME_RE.search(m.group(0))
+        return _line_xml(name.group(1) if name else "", x, y, w, h)
+
+    return _CLIPART_RE.sub(repl, xml), count
+
+
+@contextlib.contextmanager
+def _renderable(template: Path):
+    """Pfad der Vorlage, die b-PAC öffnet – bei Bedarf eine Kopie mit Linien statt Strich-Symbolen."""
+    with zipfile.ZipFile(template) as z:
+        xml, n = fix_symbols(z.read("label.xml").decode("utf-8"))
+        if not n:
+            yield template
+            return
+        with tempfile.TemporaryDirectory(prefix="labeltool-") as tmp:
+            copy = Path(tmp) / template.name
+            with zipfile.ZipFile(copy, "w", zipfile.ZIP_DEFLATED) as out:
+                for item in z.infolist():
+                    out.writestr(item, xml.encode("utf-8") if item.filename == "label.xml" else z.read(item.filename))
+            yield copy
+
+
 @on_com_thread
 def print_labels(template: Path, rows: list[dict], printer: str, flags: int) -> int:
     """Druckt ein Label je Zeile mit der Originalvorlage (wird nicht gespeichert)."""
     if not template.is_file():
         raise BpacError(f"Vorlage nicht gefunden: {template}")
-    fields = merge_fields(template)
     client = _com()
 
-    with _lock:
+    with _lock, _renderable(Path(template)) as source:
+        fields = merge_fields(source)
         com_init()
         doc = _dispatch(client)
-        objects, mapping = _open(doc, template, fields)
+        objects, mapping = _open(doc, source, fields)
         try:
             if printer:
                 # SetPrinter meldet auch bei unbekanntem Namen True und druckt dann auf den
@@ -289,14 +371,14 @@ def render_png(template: Path, row: dict, dpi: int = PREVIEW_DPI) -> bytes:
     template = Path(template)
     if not template.is_file():
         raise BpacError(f"Vorlage nicht gefunden: {template}")
-    fields = merge_fields(template)
     client = _com()
 
-    with _lock:
+    with _lock, _renderable(template) as source:
         com_init()
         try:
+            fields = merge_fields(source)
             doc = _dispatch(client)
-            objects, mapping = _open(doc, template, fields)
+            objects, mapping = _open(doc, source, fields)
             try:
                 _fill(objects, mapping, row)
                 with tempfile.TemporaryDirectory(prefix="labeltool-") as tmp:

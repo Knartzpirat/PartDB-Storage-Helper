@@ -704,7 +704,9 @@ class HelferKern:
     def _job_vorschau(self, msg: dict) -> dict:
         path = self.cache.get(msg.get("vorlage"))
         log.info("Vorschau: %s", path.name)
-        png = self.printer.render_png(path, dict(msg.get("zeile") or {}))
+        dpi = msg.get("dpi")
+        extra = {"dpi": min(max(int(dpi), 90), 720)} if isinstance(dpi, int) and dpi > 0 else {}
+        png = self.printer.render_png(path, dict(msg.get("zeile") or {}), **extra)
         return {"png": base64.b64encode(png).decode("ascii")}
 
     def _job_drucken(self, msg: dict) -> dict:

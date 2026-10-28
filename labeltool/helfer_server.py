@@ -724,8 +724,9 @@ class HelperPrinter:
     def preview_available(self) -> bool:
         return bool(self.hub.info().get("bpac"))
 
-    def render_png(self, template: Path, row: dict) -> bytes:
-        daten = self.hub.call("vorschau", {"zeile": row}, TIMEOUT_PREVIEW, template=template)
+    def render_png(self, template: Path, row: dict, dpi: int | None = None) -> bytes:
+        job = {"zeile": row, **({"dpi": int(dpi)} if dpi else {})}   # ältere Helfer ignorieren dpi
+        daten = self.hub.call("vorschau", job, TIMEOUT_PREVIEW, template=template)
         try:
             return base64.b64decode(daten["png"])
         except (KeyError, TypeError, ValueError):
@@ -837,8 +838,8 @@ class LocalPrinter:
     def preview_available(self) -> bool:
         return self.module.preview_available()
 
-    def render_png(self, template: Path, row: dict) -> bytes:
-        return self.module.render_png(template, row)
+    def render_png(self, template: Path, row: dict, dpi: int | None = None) -> bytes:
+        return self.module.render_png(template, row, **({"dpi": int(dpi)} if dpi else {}))
 
     def print_labels(self, template: Path, rows: list[dict], printer: str, flags: int) -> int:
         name = printer
@@ -869,7 +870,10 @@ class ModePrinter:
         return bool(check and check())
 
     def render_png(self, template, row):
-        return self.current().render_png(template, row)
+        dpi = getattr(self.cfg, "preview_dpi", None)
+        if not dpi or dpi == bpac.PREVIEW_DPI:      # Standard: Aufruf wie bisher (auch für ältere Helfer)
+            return self.current().render_png(template, row)
+        return self.current().render_png(template, row, dpi=dpi)
 
     def print_labels(self, template, rows, printer, flags):
         return self.current().print_labels(template, rows, printer, flags)

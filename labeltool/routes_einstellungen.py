@@ -38,6 +38,8 @@ class DruckIn(BaseModel):
     direktdruck: bool = False
     drucker: str = ""
     schnitt: list[str] = []
+    vorschau_dpi: int | None = None    # None = unverändert
+    qualitaet: str | None = None       # Direktdruck-Qualität, None = unverändert
 
 
 def _hook(hooks: Any, name: str) -> Callable | None:
@@ -108,10 +110,13 @@ def register(app: FastAPI, cfg: Config, hooks: Any = None,
     def settings_print_save(req: DruckIn):
         try:
             modus, schnitt = es.check_print(req.modus, req.schnitt)
+            dpi = es.check_preview_dpi(req.vorschau_dpi if req.vorschau_dpi is not None else cfg.preview_dpi)
+            quality = es.check_print_quality(req.qualitaet if req.qualitaet is not None else cfg.print_quality)
         except es.SettingsError as e:
             bad(e)
         es.save_section(cfg, "druck", {"modus": modus, "direktdruck": req.direktdruck,
-                                       "drucker": (req.drucker or "").strip(), "schnitt": schnitt})
+                                       "drucker": (req.drucker or "").strip(), "schnitt": schnitt,
+                                       "vorschau_dpi": dpi, "qualitaet": quality})
         return es.overview(cfg)
 
     @app.post("/api/einstellungen/helfer/token")

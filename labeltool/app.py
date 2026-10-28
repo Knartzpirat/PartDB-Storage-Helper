@@ -184,6 +184,7 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
             "partdb": cfg.partdb_url,
             "bpac_vorschau": vorlagen.preview_available(printer),
             "installer_verfuegbar": routes_helfer_download.installer_info(cfg)["installer_verfuegbar"],
+            "vorschau_dpi": cfg.preview_dpi,
         }
 
     @app.post("/api/open-output")
@@ -221,7 +222,7 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
     def require_direct_print() -> int:
         if not cfg.direct_print:
             raise HTTPException(400, "Direktdruck ist aus – in config.yaml unter druck: direktdruck: true setzen.")
-        return bpac.print_flags(cfg.cut_options)
+        return bpac.print_flags(cfg.cut_options, getattr(cfg, "print_quality", "standard"))
 
     @app.get("/api/print-status")
     def print_status():

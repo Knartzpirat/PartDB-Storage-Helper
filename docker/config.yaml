@@ -103,6 +103,8 @@ druck:
   direktdruck: true
   drucker: ""                       # leer = Drucker aus der Vorlage, sonst z. B. "Brother PT-P710BT"
   schnitt: [autocut, cutatend]      # möglich: autocut, halfcut, chainprint, cutatend, tailcut, cutmark
+  qualitaet: standard                 # standard (180×180) | hoch (180×360, z. B. PT-P710BT) | hoch_langsam
+  vorschau_dpi: 360                   # Vorschau über b-PAC: 180 | 360 | 600 | 720
 
 helfer:
   token: ""                         # im Reiter "Einstellungen" erzeugen ("Helfer-Token neu erzeugen")

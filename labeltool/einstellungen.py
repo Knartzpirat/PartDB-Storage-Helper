@@ -20,7 +20,7 @@ from urllib.parse import urlsplit
 
 import yaml
 
-from .bpac import CUT_OPTIONS
+from .bpac import CUT_OPTIONS, QUALITY_OPTIONS
 from .config import Config
 
 PRINT_MODES = ("lokal", "helfer")
@@ -88,6 +88,10 @@ def apply_settings(cfg: Config, data: dict) -> None:
         cfg.printer = str(prn["drucker"] or "")
     if isinstance(prn.get("schnitt"), list):
         cfg.cut_options = [str(o) for o in prn["schnitt"]]
+    if prn.get("vorschau_dpi"):
+        cfg.preview_dpi = int(prn["vorschau_dpi"])
+    if prn.get("qualitaet"):
+        cfg.print_quality = str(prn["qualitaet"])
 
     hlp = data.get("helfer") or {}
     if hlp.get("token"):
@@ -127,6 +131,26 @@ def check_print(modus: str, schnitt: list[str]) -> tuple[str, list[str]]:
     return modus, out
 
 
+PREVIEW_DPI_OPTIONS = (180, 360, 600, 720)   # 180 = Druckerauflösung, mehr = schärfere Vorschau
+
+
+def check_preview_dpi(dpi) -> int:
+    try:
+        dpi = int(dpi)
+    except (TypeError, ValueError):
+        raise SettingsError("Vorschauqualität muss eine Zahl (dpi) sein.")
+    if dpi not in PREVIEW_DPI_OPTIONS:
+        raise SettingsError(f"Vorschauqualität: erlaubt sind {', '.join(map(str, PREVIEW_DPI_OPTIONS))} dpi.")
+    return dpi
+
+
+def check_print_quality(quality) -> str:
+    q = str(quality or "").strip().lower()
+    if q not in QUALITY_OPTIONS:
+        raise SettingsError(f"Druckqualität: erlaubt sind {', '.join(QUALITY_OPTIONS)}.")
+    return q
+
+
 def token_hint(token: str | None) -> str:
     """'tcp_1a2b…9c8d' – genug zum Wiedererkennen, nicht genug zum Benutzen."""
     token = token or ""
@@ -147,6 +171,8 @@ def overview(cfg: Config) -> dict:
         "partdb": {"url": cfg.partdb_url, "token_gesetzt": bool(cfg.partdb_token),
                    "token_hinweis": token_hint(cfg.partdb_token), "ssl_pruefen": cfg.verify_ssl},
         "druck": {"modus": cfg.print_mode, "direktdruck": cfg.direct_print, "drucker": cfg.printer,
-                  "schnitt": list(cfg.cut_options), "schnitt_optionen": list(CUT_OPTIONS)},
+                  "schnitt": list(cfg.cut_options), "schnitt_optionen": list(CUT_OPTIONS),
+                  "vorschau_dpi": cfg.preview_dpi, "vorschau_dpi_optionen": list(PREVIEW_DPI_OPTIONS),
+                  "qualitaet": cfg.print_quality, "qualitaet_optionen": list(QUALITY_OPTIONS)},
         "helfer": {"token_gesetzt": bool(cfg.helper_token), "token_hinweis": token_hint(cfg.helper_token)},
     }
