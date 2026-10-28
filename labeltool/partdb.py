@@ -101,6 +101,9 @@ class PartDB:
             headers={"Content-Type": "application/merge-patch+json"},
         ))
 
+    def delete(self, path: str) -> Any:
+        return self._check(self._client.delete(path))
+
     def close(self) -> None:
         self._client.close()
 
@@ -146,6 +149,12 @@ class PartDB:
         if parent_id:
             payload["parent"] = f"/api/storage_locations/{parent_id}"
         return self.post("/storage_locations", payload)
+
+    def update_storage_location(self, location_id: int, payload: dict) -> dict:
+        return self.patch(f"/storage_locations/{location_id}", payload, comment="Box geändert (labeltool)")
+
+    def delete_storage_location(self, location_id: int) -> None:
+        self.delete(f"/storage_locations/{location_id}")
 
     def set_part_tags(self, part_id: int, tags: str) -> dict:
         return self.patch(f"/parts/{part_id}", {"tags": tags}, comment="Label gedruckt (labeltool)")

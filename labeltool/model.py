@@ -56,6 +56,11 @@ def build_comment(content: str, color: str, compartments: int | str, box_type: s
             f"Lagerabteile: {compartments} Lagerart: {box_type}")
 
 
+def comment_prefix(text: str) -> str:
+    """Freier Text vor „Lagerinhalt: …“ – bleibt beim Ändern einer Box erhalten."""
+    return " ".join(_KEY_SPLIT.split(_plain(text))[0].split())
+
+
 def _box_type_from_parameters(loc: dict, cfg: Config) -> str:
     """Alte Boxen haben die Lagerart als Parameter (Name = Boxtyp oder Name 'Lagerart')."""
     for p in loc.get("parameters") or []:

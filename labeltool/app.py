@@ -18,7 +18,7 @@ from .config import BoxType, Category, Config
 from .labels import (NAME_COLUMNS, build_content_labels, content_label_for_box, export_content_labels,
                      has_tag, join_unique, make_content_label, name_label_rows, parts_by_location, remove_tag,
                      search_boxes, write_csv)
-from .model import Box, build_comment, make_name, next_number, parse_box
+from .model import NAME_RE, Box, build_comment, comment_prefix, make_name, next_number, parse_box
 from .partdb import PartDB, PartDBError, ref_id
 from .ptouch import TemplateError, open_file
 from .stammdaten import MasterData, MasterDataError
@@ -38,6 +38,17 @@ class NewBox(BaseModel):
 
 class IdList(BaseModel):
     ids: list[int]
+
+
+class BoxEdit(BaseModel):
+    abbr: str                       # Inhalt (Kürzel) – ein anderer Inhalt gibt der Box einen neuen Namen
+    compartments: int = Field(ge=1, le=99)
+    box_type: str
+    color: str | None = None        # leer = Boxfarbe des Inhalts
+
+
+class BoxDelete(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=50)
 
 
 class CategoryIn(BaseModel):
@@ -542,6 +553,89 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
                 created.append(parse_box(loc, cfg))
         state.queue_names([b.id for b in created])
         return {"created": [b.to_dict() for b in created], "color": color, "color_hex": cfg.hex_for(color)}
+
+    @app.put("/api/boxes/{lid}")
+    def edit_box(lid: int, req: BoxEdit):
+        """Inhalt, Boxfarbe, Abteile und Lagerart ändern. Der Name folgt dem Schema Kürzel-Abteile.Nummer:
+        neue Abteile behalten die Nummer, ein neuer Inhalt bekommt die nächste freie Nummer seines Kürzels.
+        Ändert sich etwas, das auf dem Box-Label steht, kommt die Box wieder in die Box-Label-Warteschlange."""
+        cat = cfg.categories.get(req.abbr)
+        if not cat:
+            raise HTTPException(400, f"Unbekanntes Kürzel '{req.abbr}'.")
+        if req.box_type not in cfg.box_types:
+            raise HTTPException(400, f"Unbekannte Lagerart '{req.box_type}'.")
+        color = cat.color
+        if req.color and req.color.strip():
+            color = cfg.color_name(req.color)
+            if not color:
+                raise HTTPException(400, f"Unbekannte Boxfarbe '{req.color}' – unter Stammdaten > Boxfarben anlegen.")
+        with api() as c:
+            locations = c.storage_locations()
+            loc = next((l for l in locations if ref_id(l) == lid), None)
+            if loc is None:
+                raise HTTPException(404, f"Box {lid} gibt es in Part-DB nicht (mehr).")
+            old = parse_box(loc, cfg)
+            others = [str(l.get("name") or "") for l in locations if ref_id(l) != lid]
+            name = old.name
+            m = NAME_RE.match(old.name)
+            if m:   # Boxen mit freiem Namen behalten ihn
+                number = int(m.group("num")) if m.group("abbr") == req.abbr else next_number(req.abbr, others)
+                name = make_name(req.abbr, req.compartments, number)
+                if name in others:
+                    raise HTTPException(409, f"Den Namen {name} gibt es schon – bitte zuerst die andere Box ändern.")
+            prefix = comment_prefix(str(loc.get("comment") or ""))
+            comment = (prefix + " " if prefix else "") + build_comment(cat.name, color, req.compartments, req.box_type)
+            payload = {}
+            if name != old.name:
+                payload["name"] = name
+            if comment != str(loc.get("comment") or ""):
+                payload["comment"] = comment
+            if not payload:
+                return {"box": old.to_dict(), "geaendert": False, "box_label_neu": False, "name_alt": old.name}
+            new = parse_box(dict(loc, **(c.update_storage_location(lid, payload) or payload)), cfg)
+        relabel = (new.name, new.content, new.color) != (old.name, old.content, old.color)
+        if relabel:
+            state.queue_names([lid])
+        return {"box": new.to_dict(), "geaendert": True, "box_label_neu": relabel, "name_alt": old.name}
+
+    @app.post("/api/boxes/loeschen")
+    def delete_boxes(req: BoxDelete):
+        """Boxen in Part-DB löschen – nur leere: keine Bauteile darin, keine Lagerorte darunter."""
+        deleted, failed = [], []
+        with api() as c:
+            locations = {ref_id(l): l for l in c.storage_locations()}
+            used: dict[int, list[str]] = {}
+            parts = c.parts()
+            lots = c.lots_by_part(parts)
+            for part in parts:
+                for lot in lots.get(ref_id(part), []):
+                    used.setdefault(ref_id(lot.get("storage_location")), []).append(str(part.get("name") or ""))
+            children = {ref_id(l.get("parent")) for l in locations.values() if l.get("parent")}
+            for lid in dict.fromkeys(req.ids):
+                loc = locations.get(lid)
+                if loc is None:
+                    failed.append({"id": lid, "name": str(lid), "grund": "gibt es in Part-DB nicht (mehr)"})
+                    continue
+                name = str(loc.get("name") or lid)
+                if used.get(lid):
+                    parts = sorted(set(used[lid]))
+                    failed.append({"id": lid, "name": name, "grund": f"enthält noch {len(parts)} Bauteil(e): "
+                                   + ", ".join(parts[:5]) + (" …" if len(parts) > 5 else "")})
+                    continue
+                if lid in children:
+                    failed.append({"id": lid, "name": name, "grund": "hat Unter-Lagerorte"})
+                    continue
+                try:
+                    c.delete_storage_location(lid)
+                except PartDBError as e:
+                    failed.append({"id": lid, "name": name, "grund": str(e)})
+                    continue
+                deleted.append({"id": lid, "name": name})
+        gone = {d["id"] for d in deleted}
+        if gone:
+            state.set("name_queue", [i for i in state.data["name_queue"] if i not in gone])
+            state.set("last_name_export", [i for i in state.data["last_name_export"] if i not in gone])
+        return {"geloescht": deleted, "fehler": failed}
 
     # ------------------------------------------------------------- Namenslabels (12 mm)
     @app.get("/api/name-labels")

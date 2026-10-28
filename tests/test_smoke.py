@@ -41,6 +41,7 @@ class FakePartDB:
                            {"id": 66, "name": "Spannungsregler - Linear"}]
         self.next_id = 400
         self.patches = []
+        self.deleted = []
 
     def page(self, items, req):
         p = int(req.url.params.get("page", 1)); n = int(req.url.params.get("itemsPerPage", 30))
@@ -55,6 +56,15 @@ class FakePartDB:
             body = json.loads(req.content)
             loc = {"id": self.next_id, **body}; self.locations[self.next_id] = loc; self.next_id += 1
             return httpx.Response(201, json=loc)
+        if (mm := re.match(r"/api/storage_locations/(\d+)$", path)) and int(mm.group(1)) in self.locations:
+            lid = int(mm.group(1))
+            if m == "PATCH":
+                assert req.headers["Content-Type"] == "application/merge-patch+json"
+                self.locations[lid].update(json.loads(req.content))
+                return httpx.Response(200, json=self.locations[lid])
+            if m == "DELETE":
+                del self.locations[lid]; self.deleted.append(lid)
+                return httpx.Response(204)
         if m == "GET" and path == "/api/parts":
             return httpx.Response(200, json=self.page(list(self.parts.values()), req))
         if m == "GET" and path == "/api/footprints":

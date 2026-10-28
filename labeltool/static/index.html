@@ -340,6 +340,10 @@
         <button class="btn primary" id="b-create">In Part-DB anlegen</button>
       </div>
       <div class="msg" id="m-new"></div>
+      <div class="row" id="undo-create" hidden>
+        <button class="btn danger" id="b-undo-create">Rückgängig</button>
+        <span class="muted">Falsch angelegt? Löscht genau diese Boxen wieder aus Part-DB (nur solange sie leer sind).</span>
+      </div>
     </div>
 
     <div class="panel">
@@ -431,7 +435,7 @@
         <div><label for="f-ftype">Lagerart</label><select id="f-ftype"><option value="">Alle</option></select></div>
       </div>
       <div class="msg" id="m-boxes"></div>
-      <div class="tablewrap scroll" style="margin-top:12px"><table class="compact rtable"><thead><tr><th>Name</th><th>Barcode</th><th>Inhalt</th><th>Boxfarbe</th><th>Lagerart</th><th>Abteile</th><th class="actions" style="text-align:right">Label nachdrucken</th></tr></thead>
+      <div class="tablewrap scroll" style="margin-top:12px"><table class="compact rtable"><thead><tr><th>Name</th><th>Barcode</th><th>Inhalt</th><th>Boxfarbe</th><th>Lagerart</th><th>Abteile</th><th class="actions" style="text-align:right">Aktionen</th></tr></thead>
         <tbody id="t-boxes"></tbody></table></div>
     </div>
   </section>
@@ -900,7 +904,33 @@ $("#b-create").onclick = async () => {
       compartments: +$("#f-comp").value || 1, count: +$("#f-count").value || 1,
       color: $("#f-color").value || null });
     msg("#m-new", `Angelegt: ${r.created.map(b => `${b.name} (${b.barcode})`).join(", ")}\nBoxfarbe: ${r.color} – Box-Label unten drucken, sobald alle Boxen angelegt sind.`);
-    preview(); loadNames();
+    showUndoCreate(r.created);
+    preview(); loadNames(); if (BOXES.length) loadBoxes();
+  } catch (e) { msg("#m-new", e.message, false); }
+  btn.disabled = false;
+};
+
+// Rückgängig: die zuletzt angelegten Boxen wieder löschen (bis zum nächsten Anlegen bzw. Neuladen)
+let LAST_CREATED = [];
+function showUndoCreate(created) {
+  LAST_CREATED = created || [];
+  const n = LAST_CREATED.length;
+  $("#undo-create").hidden = !n;
+  $("#b-undo-create").textContent = n === 1 ? `Rückgängig – ${LAST_CREATED[0].name} löschen` : `Rückgängig – ${n} Boxen löschen`;
+}
+$("#b-undo-create").onclick = async () => {
+  const names = LAST_CREATED.map(b => b.name);
+  if (!names.length || !confirm(`Diese Box(en) wieder aus Part-DB löschen?\n\n${names.join("\n")}\n\nBoxen, in die schon Bauteile eingelagert wurden, bleiben stehen.`)) return;
+  const btn = $("#b-undo-create"); btn.disabled = true;
+  try {
+    const r = await call("POST", "/api/boxes/loeschen", {ids: LAST_CREATED.map(b => b.id)});
+    const left = new Set(r.fehler.map(f => f.id));
+    const lines = [];
+    if (r.geloescht.length) lines.push(`Gelöscht: ${r.geloescht.map(d => d.name).join(", ")}`);
+    r.fehler.forEach(f => lines.push(`Nicht gelöscht: ${f.name} – ${f.grund}`));
+    msg("#m-new", lines.join("\n"), !r.fehler.length);
+    showUndoCreate(LAST_CREATED.filter(b => left.has(b.id) && !/nicht \(mehr\)/.test(r.fehler.find(f => f.id === b.id)?.grund || "")));
+    preview(); loadNames(); if (BOXES.length) loadBoxes();
   } catch (e) { msg("#m-new", e.message, false); }
   btn.disabled = false;
 };
@@ -1311,15 +1341,71 @@ function renderBoxes() {
     && (!fc || (b.content || "") === fc) && (!ft || (b.box_type || "") === ft));
   $("#c-boxes").textContent = BOXES.length;
   $("#boxes-shown").textContent = anyFilter ? `${list.length} von ${BOXES.length} angezeigt` : `Box${BOXES.length === 1 ? "" : "en"} in Part-DB`;
-  $("#t-boxes").innerHTML = list.map(b => `<tr><td class="mono lead1">${esc(b.name)}</td><td class="mono" data-label="Barcode">${esc(b.barcode)}</td>
+  $("#t-boxes").innerHTML = list.map(b => b.id === BOX_EDIT ? boxEditRow(b) : `<tr class="${b.id === BOX_DEL ? "confirm" : ""}"><td class="mono lead1">${esc(b.name)}</td><td class="mono" data-label="Barcode">${esc(b.barcode)}</td>
       <td data-label="Inhalt">${esc(b.content)}</td><td data-label="Boxfarbe">${sw(b.color_hex)}${esc(b.color)}</td>
       <td data-label="Lagerart">${esc(b.box_type) || `<span class="muted">–</span>`}</td><td data-label="Abteile">${esc(b.compartments)}</td>
-      <td class="actions">${b.in_queue ? `<span class="inq" title="Steht schon in der Warteschlange der Box-Labels">Box-Label wartet</span>`
+      <td class="actions">${b.id === BOX_DEL ? `<span>Box in Part-DB löschen?</span>
+        <button class="btn danger" onclick="deleteBox(${b.id})">Ja, löschen</button>
+        <button class="btn" onclick="BOX_DEL = null; renderBoxes()">Nein</button>`
+      : `${b.in_queue ? `<span class="inq" title="Steht schon in der Warteschlange der Box-Labels">Box-Label wartet</span>`
         : `<button class="btn" onclick="requeue(${b.id})" title="Box-Label dieser Box in die Warteschlange (Reiter Box-Labels)">Box-Label</button>`}
-        <button class="btn" onclick="reprintBox(${b.id})" title="Bauteil-Label: im Reiter Bauteil-Labels zum Nachdruck auswählen">Bauteil-Label</button></td></tr>`).join("")
+        <button class="btn" onclick="reprintBox(${b.id})" title="Bauteil-Label: im Reiter Bauteil-Labels zum Nachdruck auswählen">Bauteil-Label</button>
+        <button class="btn" onclick="editBox(${b.id})" title="Inhalt, Boxfarbe, Lagerart oder Abteile ändern">Bearbeiten</button>
+        <button class="btn del" onclick="BOX_EDIT = null; BOX_DEL = ${b.id}; renderBoxes()" title="Leere Box aus Part-DB löschen">Löschen</button>`}</td></tr>`).join("")
     || `<tr><td colspan="7" class="muted">${anyFilter ? "Keine Box passt zum Filter." : "Keine Boxen in Part-DB gefunden."}</td></tr>`;
 }
 ["#f-filter", "#f-fcontent", "#f-ftype"].forEach(s => $(s).addEventListener("input", renderBoxes));
+// Bearbeiten in der Zeile. Neuer Inhalt = neues Kürzel und nächste freie Nummer, andere Abteile = gleiche Nummer.
+let BOX_EDIT = null, BOX_DEL = null;
+function boxEditRow(b) {
+  const opt = (v, text, sel) => `<option value="${esc(v)}" ${sel ? "selected" : ""}>${esc(text)}</option>`;
+  const cats = META.kategorien.some(c => c.key === b.abbr) ? "" : opt("", "– Inhalt wählen –", true);
+  const types = META.boxtypen.some(t => t.name === b.box_type) ? "" : opt("", "– Lagerart wählen –", true);
+  const own = META.farben.some(f => f.name === b.color) ? b.color : "";
+  return `<tr id="box-edit"><td class="mono lead1">${esc(b.name)}</td><td class="mono" data-label="Barcode">${esc(b.barcode)}</td>
+    <td data-label="Inhalt"><select id="be-abbr" aria-label="Inhalt">${cats}${META.kategorien.map(c => opt(c.key, `${c.name} (${c.key})`, c.key === b.abbr)).join("")}</select></td>
+    <td data-label="Boxfarbe"><select id="be-color" aria-label="Boxfarbe">${opt("", "Standard des Inhalts", !own)}${META.farben.map(f => opt(f.name, f.name, f.name === own)).join("")}</select></td>
+    <td data-label="Lagerart"><select id="be-type" aria-label="Lagerart">${types}${META.boxtypen.map(t => opt(t.name, t.name, t.name === b.box_type)).join("")}</select></td>
+    <td data-label="Abteile"><input id="be-comp" type="number" min="1" max="99" value="${+b.compartments || 1}" aria-label="Abteile" style="width:70px"></td>
+    <td class="actions"><button class="btn primary" onclick="saveBox(${b.id})">Speichern</button>
+      <button class="btn" onclick="BOX_EDIT = null; renderBoxes()">Abbrechen</button></td></tr>`;
+}
+function editBox(id) {
+  BOX_EDIT = id; BOX_DEL = null; renderBoxes();
+  const row = $("#box-edit");
+  if (!row) return;
+  // Lagerart wechseln -> Abteile vorbelegen (wie beim Anlegen)
+  $("#be-type").onchange = () => { const t = META.boxtypen.find(t => t.name === $("#be-type").value); if (t) $("#be-comp").value = t.compartments; };
+  row.addEventListener("keydown", e => { if (e.key === "Enter") saveBox(id); if (e.key === "Escape") { BOX_EDIT = null; renderBoxes(); } });
+  row.querySelector("select").focus();
+}
+async function saveBox(id) {
+  const body = {abbr: $("#be-abbr").value, box_type: $("#be-type").value, compartments: +$("#be-comp").value || 1,
+                color: $("#be-color").value || null};
+  if (!body.abbr || !body.box_type) { msg("#m-boxes", "Bitte Inhalt und Lagerart wählen.", false); return; }
+  try {
+    const r = await call("PUT", `/api/boxes/${id}`, body);
+    BOX_EDIT = null;
+    if (!r.geaendert) msg("#m-boxes", "Nichts geändert.");
+    else msg("#m-boxes", (r.box.name !== r.name_alt ? `${r.name_alt} heißt jetzt ${r.box.name}. ` : `${r.box.name} geändert. `)
+      + (r.box_label_neu ? "Das alte Box-Label stimmt nicht mehr – die Box steht wieder in der Warteschlange der Box-Labels." : ""));
+    loadBoxes(); loadNames();
+  } catch (e) { msg("#m-boxes", e.message, false); }
+}
+async function deleteBox(id) {
+  const b = BOXES.find(x => x.id === id);
+  if (!b || !confirm(`${b.name} (${b.barcode}) endgültig aus Part-DB löschen?\n\nDas lässt sich nicht rückgängig machen – eine neu angelegte Box bekommt einen anderen Barcode.`)) {
+    BOX_DEL = null; renderBoxes(); return;
+  }
+  try {
+    const r = await call("POST", "/api/boxes/loeschen", {ids: [id]});
+    BOX_DEL = null;
+    if (r.geloescht.length) msg("#m-boxes", `${b.name} gelöscht.`);
+    else msg("#m-boxes", `${b.name} nicht gelöscht: ${r.fehler.map(f => f.grund).join(", ")}`, false);
+    LAST_CREATED = LAST_CREATED.filter(x => x.id !== id); showUndoCreate(LAST_CREATED);
+    loadBoxes(); loadNames(); preview();
+  } catch (e) { BOX_DEL = null; renderBoxes(); msg("#m-boxes", e.message, false); }
+}
 async function requeue(id) {
   try {
     await call("POST", "/api/name-labels/queue", {ids: [id]});
