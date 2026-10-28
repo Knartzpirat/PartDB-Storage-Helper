@@ -239,9 +239,10 @@ def status(printer: str) -> dict:
 
 # Symbole aus den Schriften "PTC Dingbats…" bringt nur der P-touch Editor 6 intern mit – Windows hat nur die
 # älteren "PT Dingbats", deren Zeichen dort fehlen. b-PAC zeichnet solche Symbole deshalb als leeres Kästchen.
-# Schmale, strichförmige Symbole (typisch: Trennstrich zwischen Feldern) ersetzen wir beim Rendern/Drucken
-# in einer temporären Kopie durch eine echte Linie. Die Originalvorlage bleibt unverändert.
-_CLIPART_RE = re.compile(r"<image:clipart>(?:(?!</image:clipart>).)*?originalName=\"FONT,PTC [^\"]*\""
+# Normalerweise lädt ptouch_fonts die Schriften aus der lokalen P-touch-Installation, dann bleibt alles wie
+# in der Vorlage. Nur wenn eine Schrift fehlt (kein P-touch Editor 6), ersetzen wir schmale, strichförmige
+# Symbole (typisch: Trennstrich zwischen Feldern) in einer temporären Kopie durch eine echte Linie.
+_CLIPART_RE = re.compile(r"<image:clipart>(?:(?!</image:clipart>).)*?originalName=\"FONT,(PTC [^,\"]*)[^\"]*\""
                          r"(?:(?!</image:clipart>).)*</image:clipart>", re.S)
 _STYLE_RE = re.compile(r'<pt:objectStyle x="([\d.]+)pt" y="([\d.]+)pt" width="([\d.]+)pt" height="([\d.]+)pt"')
 _NAME_RE = re.compile(r'objectName="([^"]*)"')
@@ -272,12 +273,15 @@ def _line_xml(name: str, x: float, y: float, w: float, h: float) -> str:
             f'</draw:polyStyle></draw:poly>')
 
 
-def fix_symbols(xml: str) -> tuple[str, int]:
-    """Strichförmige PTC-Dingbats-Symbole durch Linien ersetzen. -> (xml, Anzahl ersetzt)."""
+def fix_symbols(xml: str, available=()) -> tuple[str, int]:
+    """Strichförmige PTC-Dingbats-Symbole durch Linien ersetzen, außer ihre Schrift ist geladen
+    (available = Familiennamen). -> (xml, Anzahl ersetzt)."""
     count = 0
 
     def repl(m: re.Match) -> str:
         nonlocal count
+        if m.group(1) in available:                 # Schrift da -> b-PAC zeichnet das Original
+            return m.group(0)
         st = _STYLE_RE.search(m.group(0))
         if not st:
             return m.group(0)
@@ -294,8 +298,9 @@ def fix_symbols(xml: str) -> tuple[str, int]:
 @contextlib.contextmanager
 def _renderable(template: Path):
     """Pfad der Vorlage, die b-PAC öffnet – bei Bedarf eine Kopie mit Linien statt Strich-Symbolen."""
+    from . import ptouch_fonts
     with zipfile.ZipFile(template) as z:
-        xml, n = fix_symbols(z.read("label.xml").decode("utf-8"))
+        xml, n = fix_symbols(z.read("label.xml").decode("utf-8"), ptouch_fonts.load())
         if not n:
             yield template
             return

@@ -36,7 +36,9 @@ def test_quadratische_symbole_bleiben():
     assert bpac.fix_symbols(sym) == (sym, 0)
 
 
-def test_renderbare_kopie_laesst_original_unveraendert(tmp_path):
+def test_renderbare_kopie_laesst_original_unveraendert(tmp_path, monkeypatch):
+    from labeltool import ptouch_fonts
+    monkeypatch.setattr(ptouch_fonts, "load", lambda: [])       # kein P-touch Editor 6 -> Linien-Ersatz
     src = tmp_path / "v.lbx"
     src.write_bytes((VORLAGEN / "PartDB_Window-Div-Bin-3.lbx").read_bytes())
     before = src.read_bytes()
@@ -102,3 +104,47 @@ def test_druckqualitaet_einstellung_und_direktdruck(tmp_path):
     c.post("/api/boxes", json={"abbr": "MIC", "compartments": 2, "box_type": "WinBin2", "count": 1})
     assert c.post("/api/name-labels/print").status_code == 200
     assert prn.jobs[-1][2] == 0x1 | 0x2000000                                      # Flags beim Drucker
+
+
+def test_geladene_schrift_wird_nicht_ersetzt(tmp_path, monkeypatch):
+    from labeltool import ptouch_fonts
+    monkeypatch.setattr(ptouch_fonts, "load", lambda: ["PTC Dingbats3"])
+    xml = xml_of("PartDB_Window-Div-Bin-3.lbx")
+    assert bpac.fix_symbols(xml, ["PTC Dingbats3"]) == (xml, 0)
+    src = tmp_path / "v.lbx"
+    src.write_bytes((VORLAGEN / "PartDB_Window-Div-Bin-3.lbx").read_bytes())
+    with bpac._renderable(src) as same:
+        assert same == src                                        # Original geht unverändert an b-PAC
+
+
+def _mini_font(family: str) -> bytes:
+    """Kleinste sfnt-Datei mit name- und cmap-Tabelle (reicht zum Erkennen, nicht zum Rendern)."""
+    import struct
+    name_str = family.encode("utf-16-be")
+    name = struct.pack(">HHH", 0, 1, 6 + 12) + struct.pack(">HHHHHH", 3, 1, 0x409, 1, len(name_str), 0) + name_str
+    cmap = struct.pack(">HH", 0, 0)
+    tables = [(b"cmap", cmap), (b"head", bytes(54)), (b"maxp", bytes(6)), (b"name", name)]
+    off = 12 + 16 * len(tables)
+    head, body = struct.pack(">IHHHH", 0x00010000, len(tables), 0, 0, 0), b""
+    for tag, data in tables:
+        head += struct.pack(">4sIII", tag, 0, off + len(body), len(data))
+        body += data
+    return head + body
+
+
+def test_schriften_aus_bytes_extrahieren():
+    from labeltool import ptouch_fonts
+    blob = b"MZ" + b"\0" * 100 + _mini_font("PTC Dingbats3") + b"\0" * 50 + _mini_font("Arial") + b"Rest"
+    fonts = ptouch_fonts.extract_fonts(blob)
+    assert list(fonts) == ["PTC Dingbats3"]                      # nur P-touch-Schriften
+    assert ptouch_fonts._family(fonts["PTC Dingbats3"]) == "PTC Dingbats3"
+
+
+def test_schriften_aus_echtem_ptouch_editor():
+    import pytest
+    from labeltool import ptouch_fonts
+    files = ptouch_fonts.font_files()
+    if not files:
+        pytest.skip("P-touch Editor 6 nicht installiert")
+    fonts = ptouch_fonts.find_fonts()
+    assert "PTC Dingbats3" in fonts and len(files) == len(set(files))

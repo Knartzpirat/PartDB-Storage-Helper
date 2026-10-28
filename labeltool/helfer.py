@@ -323,6 +323,8 @@ def diagnose(ausgabe: Path, vorlage: Path | None = None, printer=bpac) -> dict:
         out["installierte_drucker"] = ptouch_modelle.installierte_drucker()
     except Exception as e:
         out["modelle_fehler"], out["ok"] = str(e), False
+    from . import ptouch_fonts
+    out["ptouch_schriften"] = ptouch_fonts.load()   # leer = Trennstriche werden als Linie ersetzt
     try:
         import tkinter   # noqa: F401 – nur prüfen, ob gepackt
         out["tkinter"] = True
