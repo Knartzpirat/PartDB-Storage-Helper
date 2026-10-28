@@ -9,6 +9,9 @@
     --bg: #f4f3ef; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6a65;
     --line: #dddad2; --accent: #2f5d50; --accent-ink: #ffffff; --warn: #9a5b00; --warn-bg: #fff4e0;
     --err: #a1261b; --err-bg: #fde8e5; --ok-bg: #e7f2ec; --stage: #e2e0d9; --ok: #2b6b45;
+    --soft: #efede7;
+    /* Einheitliche Seitenbreite: Kopf, Reiter und Inhalt teilen sich dieselbe zentrierte Spalte */
+    --page: 1200px; --gx: max(24px, calc((100% - var(--page)) / 2 + 24px));
     color-scheme: light dark;
   }
   @media (prefers-color-scheme: dark) {
@@ -16,108 +19,145 @@
       --bg: #161614; --panel: #201f1d; --ink: #ecebe6; --muted: #9c9a93;
       --line: #34332f; --accent: #7fb8a4; --accent-ink: #10201b; --warn: #f0b45a; --warn-bg: #3a2c14;
       --err: #ff8f84; --err-bg: #3b1915; --ok-bg: #1b2e26; --stage: #2e2d2a; --ok: #8fd3a8;
+      --soft: #282724;
     }
   }
+  @media (prefers-color-scheme: dark) { .swatch, .colorcall .big { border-color: rgba(255,255,255,.35); } }
   * { box-sizing: border-box; }
   body { margin: 0; font: 15px/1.45 system-ui, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); }
-  header { padding: 18px 24px 0; display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  header { padding: 16px var(--gx) 0; display: flex; align-items: center; gap: 10px 16px; flex-wrap: wrap; }
   header h1 { font-size: 20px; margin: 0; letter-spacing: -.01em; }
-  header .src { color: var(--muted); font-size: 13px; min-width: 0; overflow-wrap: anywhere; }
   /* Status-Chips: Farbe + Text (nicht nur Farbe), Details im Tooltip */
-  .status { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; align-self: center; min-width: 0; max-width: 100%; }
-  .stchip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 12px; max-width: 100%;
-            border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: inherit; font-size: 13px; cursor: pointer; }
+  .status { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; min-width: 0; max-width: 100%; align-items: center; }
+  .stchip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 12px; max-width: 100%;
+            border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: inherit; font-size: 12.5px; line-height: 1.5; cursor: pointer; }
   .stchip span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-  .stchip .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+  .stchip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
   .stchip.ok { background: var(--ok-bg); border-color: var(--ok); } .stchip.ok .dot { background: var(--ok); }
   .stchip.warn { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); } .stchip.warn .dot { background: var(--warn); }
   .stchip.err { background: var(--err-bg); color: var(--err); border-color: var(--err); } .stchip.err .dot { background: var(--err); }
-  .stchip:focus-visible, nav button:focus-visible, .btn:focus-visible, .check input:focus-visible {
-    outline: 2px solid var(--accent); outline-offset: 2px; }
-  /* Einstellungen */
-  .check { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: 14px; margin: 0; cursor: pointer; }
-  .check input { width: auto; margin: 0; flex: none; }
-  .checks { display: flex; flex-wrap: wrap; gap: 6px 18px; }
-  .pwwrap { display: flex; gap: 6px; }
-  .pwwrap input { flex: 1; min-width: 0; }
-  .pwwrap .btn { padding: 6px 10px; white-space: nowrap; }
-  .res { font-size: 13px; overflow-wrap: anywhere; min-width: 0; }
-  .res.ok { color: var(--ok); } .res.err { color: var(--err); }
-  .kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; font-size: 14px; margin: 10px 0 0; }
-  .kv dt { color: var(--muted); } .kv dd { margin: 0; overflow-wrap: anywhere; }
-  .secret { background: var(--bg); border-radius: 8px; padding: 12px; margin-top: 12px; border: 1px solid var(--accent); }
-  .secret[hidden] { display: none; }
-  .secret pre { margin: 6px 0 0; padding: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
-                overflow-x: auto; font: 13px/1.5 ui-monospace, Consolas, monospace; white-space: pre; }
-  .secret input { font-family: ui-monospace, Consolas, monospace; background: var(--panel); }
-  [tabindex="-1"]:focus { outline: none; }
-  nav { display: flex; gap: 4px; padding: 14px 24px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-  nav button { background: none; border: 0; padding: 10px 14px; font: inherit; color: var(--muted);
-               border-bottom: 2px solid transparent; cursor: pointer; }
+  .stchip:focus-visible, nav button:focus-visible, .btn:focus-visible, .check input:focus-visible, summary:focus-visible,
+  .subnav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* Reiter: Arbeit | Verwaltung */
+  nav { display: flex; gap: 2px; padding: 10px var(--gx) 0; border-bottom: 1px solid var(--line); align-items: flex-end; }
+  nav button { background: none; border: 0; padding: 10px 12px; font: inherit; color: var(--muted); white-space: nowrap;
+               border-bottom: 2px solid transparent; cursor: pointer; flex: none; }
+  nav button:hover { color: var(--ink); }
   nav button.active { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+  nav .navsep { flex: 0 0 auto; width: 1px; height: 22px; background: var(--line); margin: 0 10px 11px auto; }
   nav .count { display: inline-block; min-width: 20px; padding: 0 6px; margin-left: 6px; border-radius: 10px;
-               background: var(--line); font-size: 12px; text-align: center; }
-  main { padding: 20px 24px 60px; max-width: 1100px; }
+               background: var(--line); font-size: 12px; text-align: center; font-weight: 600; }
+  nav .count.hot { background: var(--accent); color: var(--accent-ink); }
+  main { padding: 20px var(--gx) 80px; }
   section { display: none; } section.active { display: block; }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; margin-bottom: 16px; }
+  .panel > h2:first-child, .fold > summary h2 { margin-bottom: 10px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; }
+  .grid.newbox { grid-template-columns: minmax(0, 2.1fr) minmax(0, 1.6fr) minmax(0, .8fr) minmax(0, .8fr) minmax(0, 1.9fr); }
+  .grid.filters { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); }
   label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
   select, input { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px;
-                  background: var(--bg); color: var(--ink); font: inherit; }
+                  background: var(--bg); color: var(--ink); font: inherit; min-width: 0; }
   .btn { padding: 9px 16px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel);
-         color: var(--ink); font: inherit; cursor: pointer; }
+         color: var(--ink); font: inherit; font-weight: 400; cursor: pointer; white-space: nowrap; }
+  .btn:hover:not(:disabled) { border-color: var(--muted); }
   .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  .btn.sm { padding: 4px 10px; font-size: 13px; }
+  .btn.ghost { background: transparent; border-color: transparent; color: var(--muted); }
+  .btn.ghost:hover:not(:disabled) { color: var(--ink); border-color: var(--line); }
+  .btn.icon { padding: 6px 10px; line-height: 1; }
   .btn:disabled { opacity: .5; cursor: default; }
   a.btn { display: inline-block; text-decoration: none; }
   .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
+  .row .grow { flex: 1 1 auto; }
   .swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: -2px;
-            border: 1px solid rgba(0,0,0,.2); margin-right: 6px; }
-  .colorcall { display: flex; align-items: center; gap: 14px; padding: 14px; border-radius: 8px; background: var(--bg); margin-top: 14px; }
-  .colorcall .big { width: 44px; height: 44px; border-radius: 8px; border: 1px solid rgba(0,0,0,.2); flex: none; }
-  .colorcall strong { font-size: 17px; }
+            border: 1px solid rgba(0,0,0,.2); margin-right: 6px; flex: none; }
+  .colorcall { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-radius: 8px; background: var(--bg); margin-top: 14px; }
+  .colorcall .big { width: 40px; height: 40px; border-radius: 8px; border: 1px solid rgba(0,0,0,.2); flex: none; }
+  .colorcall strong { font-size: 16px; }
+  .colorcall > div { min-width: 0; overflow-wrap: anywhere; }
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  th { color: var(--muted); font-weight: 500; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  th { color: var(--muted); font-weight: 500; font-size: 13px; background: var(--panel); }
+  table.compact td { padding: 4px 8px; }
+  table.compact td.actions .btn { padding: 2px 9px; font-size: 12.5px; }
   td.mono, .mono { font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
+  td.nowrap { white-space: nowrap; }
   .msg { padding: 10px 14px; border-radius: 6px; margin-top: 12px; display: none; white-space: pre-wrap; }
   .msg.ok { display: block; background: var(--ok-bg); }
   .msg.err { display: block; background: var(--err-bg); color: var(--err); }
   .msg.busy { display: block; background: var(--warn-bg); color: var(--warn); }
   .warn { color: var(--warn); background: var(--warn-bg); padding: 4px 8px; border-radius: 4px; font-size: 13px; margin-top: 6px; }
+  /* Deutliche Warnbox mit Icon (Fehler, die eine Handlung brauchen) */
+  .alert { display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border-radius: 8px; margin: 0 0 12px;
+           background: var(--warn-bg); color: var(--ink); border: 1px solid var(--warn); border-left-width: 4px; font-size: 14px; }
+  .alert::before { content: "⚠"; color: var(--warn); font-size: 17px; line-height: 1.2; flex: none; }
+  .alert > div { min-width: 0; overflow-wrap: anywhere; }
+  .alert strong { color: var(--warn); }
+  .alert .hint { color: var(--ink); opacity: .85; font-size: 13px; }
+  /* Leerzustände */
+  .empty { text-align: center; padding: 22px 16px; border: 1px dashed var(--line); border-radius: 8px; color: var(--muted); margin-top: 6px; }
+  .empty strong { display: block; color: var(--ink); font-size: 15px; margin-bottom: 2px; }
+  .empty .ico { display: block; font-size: 22px; margin-bottom: 4px; color: var(--ok); }
+  .empty[hidden] { display: none; }
   .label24 { display: grid; gap: 2px; margin-top: 8px; }
-  .slot { border: 1px dashed var(--line); border-radius: 4px; padding: 4px 6px; font-size: 13px; min-height: 42px; }
+  .slot { border: 1px dashed var(--line); border-radius: 4px; padding: 4px 6px; font-size: 13px; min-height: 42px; min-width: 0; overflow-wrap: anywhere; }
   .slot small { color: var(--muted); display: block; }
   .slot.tag { border-style: solid; border-color: var(--accent); }
   .card { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 10px; }
-  .card h3 { margin: 0; font-size: 15px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .card h3 { margin: 0; font-size: 15px; display: flex; gap: 6px 10px; align-items: center; flex-wrap: wrap; }
+  .card.sel { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
   .muted { color: var(--muted); font-size: 13px; }
   .steps { margin: 8px 0 0; padding-left: 20px; color: var(--muted); font-size: 13px; }
-  #set-helfer summary { cursor: pointer; font-size: 14px; color: var(--muted); }
   .undobar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 14px; border-radius: 8px;
              background: var(--warn-bg); color: var(--warn); margin-bottom: 16px; }
   .undobar[hidden] { display: none; }
   .undobar .btn { color: var(--ink); }
-  .panel h2 { font-size: 16px; margin: 0 0 4px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .panel h2 { font-size: 16px; margin: 0 0 4px; display: flex; gap: 6px 10px; align-items: center; flex-wrap: wrap; }
+  .panel h2 .muted { font-weight: 400; }
   .panel h2 .btn { margin-left: auto; }
+  .panel h2 .btn + .btn { margin-left: 0; }
+  .panel h2 .count { display: inline-block; min-width: 22px; padding: 0 7px; border-radius: 10px; background: var(--line);
+                     font-size: 12px; text-align: center; }
+  .lead { margin: 0 0 10px; }
   td input, td select { padding: 5px 7px; min-width: 60px; }
   td input[type=color] { padding: 1px; width: 42px; height: 32px; }
   td.actions { white-space: nowrap; text-align: right; }
-  td.actions .btn { padding: 5px 10px; }
+  td.actions .btn { padding: 4px 10px; font-size: 13px; }
+  td.actions .btn + .btn { margin-left: 4px; }
   .btn.danger { background: var(--err-bg); color: var(--err); border-color: var(--err); }
+  .btn.del { background: transparent; border-color: transparent; color: var(--muted); }
+  .btn.del:hover:not(:disabled) { color: var(--err); border-color: var(--line); }
   tr.confirm td { background: var(--err-bg); }
+  tr.confirm td.actions span { color: var(--err); font-size: 13px; margin-right: 6px; }
+  tr[hidden] { display: none; }
   .tablewrap { overflow-x: auto; }
+  /* Lange Tabellen: eigener Scrollbereich, Kopf bleibt stehen */
+  .tablewrap.scroll { max-height: calc(100vh - 230px); min-height: 200px; overflow: auto; border-top: 1px solid var(--line); }
+  .tablewrap.scroll thead th { position: sticky; top: 0; z-index: 1; box-shadow: inset 0 -1px 0 var(--line); }
   .hexedit { display: flex; gap: 6px; align-items: center; }
   .hexedit input[type=text] { width: 90px; font-family: ui-monospace, Consolas, monospace; }
+  .inq { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 10px; background: var(--ok-bg); color: var(--ok); }
   .printconfirm { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 50;
-                  width: min(640px, calc(100% - 32px)); background: var(--panel); border: 1px solid var(--line);
+                  width: min(640px, calc(100% - 24px)); max-height: calc(100vh - 32px); overflow: auto;
+                  background: var(--panel); border: 1px solid var(--line);
                   border-left: 4px solid var(--accent); border-radius: 10px; padding: 14px 16px;
-                  box-shadow: 0 8px 28px rgba(0,0,0,.25); }
+                  box-shadow: 0 8px 28px rgba(0,0,0,.25); overflow-wrap: anywhere; }
   .printconfirm.wrong { border-left-color: var(--err); background: var(--err-bg); }
   .printconfirm h4 { margin: 0 0 6px; font-size: 15px; }
   .printconfirm .row { margin-top: 10px; }
   .printconfirm input[type=number] { width: 80px; }
   .printconfirm .timer { margin-left: auto; color: var(--muted); font-size: 13px; }
   .hint { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  /* Arbeitsablauf Bauteil-Labels: 1 drucken · 2 prüfen · 3 Tags entfernen */
+  .flow { list-style: none; margin: 4px 0 0; padding: 0; display: grid; grid-template-columns: 1.6fr 1fr 1.2fr; gap: 10px; counter-reset: st; }
+  .flow > li { counter-increment: st; background: var(--bg); border-radius: 8px; padding: 12px 14px 12px 46px; position: relative; min-width: 0; }
+  .flow > li::before { content: counter(st); position: absolute; left: 12px; top: 11px; width: 24px; height: 24px; border-radius: 50%;
+                       background: var(--accent); color: var(--accent-ink); font-weight: 700; font-size: 13px;
+                       display: flex; align-items: center; justify-content: center; }
+  .flow > li > strong { display: block; }
+  .flow .row { margin-top: 8px; gap: 8px; }
+  .flow[hidden] { display: none; }
   /* Label-Vorschau: weißes Label auf neutraler Fläche, in hell und dunkel gut sichtbar */
   .labelstage { display: flex; flex-direction: column; align-items: center; gap: 10px; background: var(--stage);
                 border-radius: 8px; padding: 14px; margin-top: 10px; min-width: 0; }
@@ -131,14 +171,19 @@
   .pvbadge.sketch { background: var(--warn-bg); color: var(--warn); }
   tr.pvrow td { background: var(--bg); }
   /* Vorlagen */
-  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
   .chip { display: inline-block; padding: 1px 8px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line);
           font-size: 12px; overflow-wrap: anywhere; }
   .chip.mono { font-size: 12px; }
   .chip.band { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
-  .tplhead { display: flex; gap: 12px; align-items: flex-start; }
+  .chip.field { background: transparent; border-color: transparent; color: var(--muted); padding: 0 4px; font-size: 11.5px; }
+  .tplhead { display: flex; gap: 12px; align-items: center; }
   .tplhead .tplinfo { flex: 1; min-width: 0; }
+  .tplhead h3 { font-size: 14px; }
   .tplhead h3 .mono { overflow-wrap: anywhere; }
+  .tplhead .uses { display: inline-flex; gap: 4px; flex-wrap: wrap; align-items: center; font-weight: 400; }
+  .tplhead .fields { margin-top: 4px; }
+  #tpl-list .card { padding: 10px 12px; margin-bottom: 8px; }
   .card.open { border-color: var(--accent); }
   .card.fresh { box-shadow: 0 0 0 3px var(--ok-bg); }
   .tplwork { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
@@ -151,30 +196,121 @@
   .copyform { background: var(--bg); border-radius: 8px; padding: 12px; margin-top: 12px; }
   .copyform input, .copyform select { background: var(--panel); }
   .copyform[hidden] { display: none; }
-  @media (max-width: 600px) { main, header, nav { padding-left: 16px; padding-right: 16px; } }
+  /* Einklappbare Abschnitte (Stammdaten, Anleitung) */
+  details.fold > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px; }
+  details.fold > summary::-webkit-details-marker { display: none; }
+  details.fold > summary::before { content: "▸"; color: var(--muted); font-size: 14px; width: 12px; flex: none; transition: transform .15s; }
+  details.fold[open] > summary::before { transform: rotate(90deg); }
+  details.fold > summary h2 { margin: 0; flex: 1; }
+  details.panel.fold:not([open]) { padding-top: 14px; padding-bottom: 14px; }
+  .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 12px 0 8px; }
+  .toolbar input[type=search] { max-width: 280px; flex: 1 1 180px; }
+  .toolbar .btn { margin-left: auto; }
+  .subfold { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+  .subfold > summary { font-size: 14px; color: var(--ink); font-weight: 600; }
+  /* Einstellungen */
+  .check { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: 14px; margin: 0; cursor: pointer; }
+  .check input { width: auto; margin: 0; flex: none; }
+  .checks { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+  .checks .ign { color: var(--warn); font-size: 12px; }
+  .pwwrap { display: flex; gap: 6px; }
+  .pwwrap input { flex: 1; min-width: 0; }
+  .pwwrap .btn { padding: 6px 10px; white-space: nowrap; }
+  .res { font-size: 13px; overflow-wrap: anywhere; min-width: 0; }
+  .res.ok { color: var(--ok); } .res.err { color: var(--err); }
+  .kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; font-size: 14px; margin: 10px 0 0; }
+  .kv dt { color: var(--muted); } .kv dd { margin: 0; overflow-wrap: anywhere; }
+  .secret { background: var(--bg); border-radius: 8px; padding: 12px; margin-top: 12px; border: 1px solid var(--accent); }
+  .secret[hidden] { display: none; }
+  .secret pre { margin: 6px 0 0; padding: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+                overflow-x: auto; font: 13px/1.5 ui-monospace, Consolas, monospace; white-space: pre; }
+  .secret input { font-family: ui-monospace, Consolas, monospace; background: var(--panel); }
+  .subnav { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; margin: 0 0 14px; align-items: baseline; }
+  .subnav a { color: var(--accent); text-decoration: none; }
+  .subnav a:hover { text-decoration: underline; }
+  .srvinfo { font-size: 12px; color: var(--muted); margin: 0 0 12px; overflow-wrap: anywhere; }
+  .sechead { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 18px 0 8px; }
+  .panel > .sechead:first-of-type { margin-top: 14px; }
+  [tabindex="-1"]:focus { outline: none; }
+  @media (max-width: 1000px) {
+    .grid.newbox { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid.newbox > :first-child { grid-column: 1 / -1; }
+    .flow { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 760px) {
+    :root { --gx: 16px; }
+    header { padding-top: 12px; }
+    header h1 { font-size: 18px; }
+    .status { margin-left: 0; width: 100%; gap: 4px; flex-wrap: wrap; }
+    .stchip { font-size: 11.5px; padding: 1px 7px; gap: 4px; }
+    .stchip .det { display: none; }
+    /* Reiter: eine waagrecht scrollbare Leiste statt mehrerer Zeilen */
+    nav { overflow-x: auto; scrollbar-width: none; padding-top: 6px; padding-right: 0; gap: 0;
+          -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent); mask-image: linear-gradient(90deg, #000 85%, transparent); }
+    nav::-webkit-scrollbar { display: none; }
+    nav button { padding: 10px 10px; }
+    nav .navsep { margin: 0 6px 11px; }
+    nav::after { content: ""; flex: 0 0 32px; }
+    main { padding-top: 14px; }
+    .panel { padding: 14px; }
+    .grid.filters { grid-template-columns: 1fr 1fr; }
+    .grid.filters > :first-child { grid-column: 1 / -1; }
+    /* Breite Tabellen als Kartenliste */
+    table.rtable, table.rtable tbody { display: block; }
+    table.rtable thead { display: none; }
+    table.rtable tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 2px 12px; padding: 10px 2px;
+                      border-bottom: 1px solid var(--line); }
+    table.rtable td { border: 0; padding: 0; min-width: 0; overflow-wrap: anywhere; }
+    table.rtable td[data-label]::before { content: attr(data-label); display: block; font-size: 11px; color: var(--muted);
+                                          font-family: system-ui, "Segoe UI", sans-serif; }
+    table.rtable td.lead1 { grid-column: 1 / -1; font-weight: 600; font-size: 14px; }
+    table.rtable td.lead1::before { display: none; }
+    table.rtable td.actions { grid-column: 1 / -1; text-align: left; white-space: normal; margin-top: 6px;
+                              display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    table.rtable td.actions .btn + .btn { margin-left: 0; }
+    table.rtable td.actions:empty { display: none; }
+    table.rtable td[colspan] { grid-column: 1 / -1; }
+    table.rtable tr.pvrow { display: block; padding: 0 0 10px; }
+    table.rtable tr#edit-row td { margin-bottom: 4px; }
+    table.rtable tr#edit-row td::before { margin-bottom: 2px; }
+    .tablewrap.scroll { max-height: none; min-height: 0; overflow: visible; border-top: 0; }
+    .row > .btn { flex: 0 1 auto; }
+    .flow .btn { white-space: normal; text-align: center; }
+    .panel h2 > .muted { order: 5; flex-basis: 100%; }
+    .checks .mono { display: none; }
+    table.compact.rtable tr { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 8px 2px; }
+    .flow .row .btn { flex: 1 1 auto; }
+    .toolbar input[type=search] { max-width: none; }
+    .tplhead { flex-direction: column; align-items: stretch; }
+    .tplhead > .btn { align-self: flex-start; }
+  }
   @media (max-width: 480px) {
-    .status { margin-left: 0; }
+    .grid.newbox { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .grid.newbox > :nth-child(2), .grid.newbox > :nth-child(5) { grid-column: 1 / -1; }
     .tplfields { grid-template-columns: minmax(0, 1fr); gap: 2px; }
     .tplfields input, .tplfields textarea { margin-bottom: 6px; }
-    .tplhead { flex-direction: column; }
     .labelstage { padding: 10px; }
+    .kv { grid-template-columns: minmax(0, 1fr); gap: 0; }
+    .kv dd { margin-bottom: 6px; }
+    .printconfirm { bottom: 8px; padding: 12px; }
+    .printconfirm .timer { margin-left: 0; width: 100%; }
   }
 </style>
 </head>
 <body>
 <header>
   <h1>Lagerbox Labels</h1>
-  <span class="src" id="src"></span>
   <div class="status" id="status" aria-label="Verbindungsstatus">
     <button type="button" class="stchip" id="st-partdb" data-goto="set-partdb"><span class="dot" aria-hidden="true"></span><span>Part-DB: …</span></button>
     <button type="button" class="stchip" id="st-helfer" data-goto="set-helfer"><span class="dot" aria-hidden="true"></span><span>Helfer: …</span></button>
     <button type="button" class="stchip" id="st-drucker" data-goto="set-druck"><span class="dot" aria-hidden="true"></span><span>Drucker: …</span></button>
   </div>
 </header>
-<nav>
-  <button data-tab="new" class="active">Neue Box</button>
+<nav aria-label="Bereiche">
+  <button data-tab="new" class="active" aria-current="page">Neue Box</button>
   <button data-tab="names">Box-Labels <span class="count" id="c-names">–</span></button>
   <button data-tab="content">Bauteil-Labels <span class="count" id="c-content">–</span></button>
+  <span class="navsep" aria-hidden="true"></span>
   <button data-tab="boxes">Alle Boxen</button>
   <button data-tab="tpl">Vorlagen</button>
   <button data-tab="master">Stammdaten</button>
@@ -184,7 +320,8 @@
   <!-- Neue Box -->
   <section id="tab-new" class="active">
     <div class="panel">
-      <div class="grid">
+      <h2>Neue Box anlegen</h2>
+      <div class="grid newbox">
         <div><label for="f-abbr">Inhalt</label><select id="f-abbr"></select></div>
         <div><label for="f-type">Lagerart</label><select id="f-type"></select></div>
         <div><label for="f-comp">Abteile</label><input id="f-comp" type="number" min="1" max="99" value="1"><div class="hint" id="h-comp"></div></div>
@@ -203,9 +340,10 @@
 
     <div class="panel">
       <h2>Neue Boxen ohne Box-Label <span class="count" id="c-new-queue">0</span></h2>
-      <p class="muted" style="margin:0 0 8px">Erst alle Boxen anlegen, dann einmal drucken und die Labels direkt auf die Boxen kleben.</p>
-      <div class="tablewrap"><table><thead><tr><th>Name</th><th>Barcode</th><th>Inhalt</th><th>Boxfarbe</th><th>Lagerart</th><th>Abteile</th><th></th></tr></thead>
+      <p class="muted lead">Erst alle Boxen anlegen, dann einmal drucken und die Labels direkt auf die Boxen kleben.</p>
+      <div class="tablewrap" data-queue-table><table class="rtable"><thead><tr><th>Name</th><th>Barcode</th><th>Inhalt</th><th>Boxfarbe</th><th>Lagerart</th><th>Abteile</th><th></th></tr></thead>
         <tbody id="t-new-queue"></tbody></table></div>
+      <div class="empty" data-queue-empty hidden><span class="ico" aria-hidden="true">✓</span><strong>Keine Box wartet auf ein Label</strong>Neu angelegte Boxen erscheinen hier, bis ihr Box-Label gedruckt ist.</div>
       <div class="row">
         <button class="btn primary" data-direct-names hidden>Direkt drucken</button>
         <button class="btn primary" data-print-names>Box-Labels drucken (CSV)</button>
@@ -219,18 +357,20 @@
   <!-- Box-Labels -->
   <section id="tab-names">
     <div class="panel">
-      <div class="tablewrap"><table><thead><tr><th>Name</th><th>Barcode</th><th>Inhalt</th><th>Boxfarbe</th><th>Lagerart</th><th></th></tr></thead>
+      <h2>Box-Labels drucken <span class="muted">24-mm-Label mit Name, Barcode und Inhalt</span>
+        <button class="btn ghost sm" data-open data-desk title="Ausgabeordner mit den CSV-Dateien öffnen">Ordner öffnen</button></h2>
+      <div class="tablewrap" data-queue-table><table class="rtable"><thead><tr><th>Name</th><th>Barcode</th><th>Inhalt</th><th>Boxfarbe</th><th>Lagerart</th><th></th></tr></thead>
         <tbody id="t-names"></tbody></table></div>
+      <div class="empty" data-queue-empty hidden><span class="ico" aria-hidden="true">✓</span><strong>Warteschlange leer</strong>Alle Boxen haben ein Label. Nachdrucken geht im Reiter „Alle Boxen“.</div>
       <div class="row">
         <button class="btn primary" data-direct-names hidden>Direkt drucken</button>
         <button class="btn primary" data-print-names>Box-Labels drucken (CSV)</button>
         <button class="btn" data-names-done disabled>Gedruckt ✓</button>
         <span class="muted" data-print-status></span>
-        <button class="btn" data-open data-desk>Ordner öffnen</button>
       </div>
       <ol class="steps">
-        <li>„Drucken“ schreibt die CSV und öffnet die Box-Label-Vorlage im P-touch Editor, schon mit der CSV verknüpft.</li>
-        <li>Dort alle Datensätze drucken, danach hier „Gedruckt“ bestätigen.</li>
+        <li>„Direkt drucken“ schickt die Labels an den Drucker – „Drucken (CSV)“ öffnet stattdessen die Box-Label-Vorlage im P-touch Editor, schon mit der CSV verknüpft.</li>
+        <li>Labels prüfen und aufkleben, danach hier „Gedruckt ✓“ bestätigen.</li>
       </ol>
       <div class="msg" id="m-names"></div>
     </div>
@@ -239,45 +379,56 @@
   <!-- Bauteil-Labels -->
   <section id="tab-content">
     <div class="panel">
-      <div class="row" style="margin-top:0">
-        <button class="btn" id="b-content-reload">Neu laden</button>
-        <button class="btn primary" id="b-content-direct" hidden>Direkt drucken</button>
-        <button class="btn primary" id="b-content-export">CSVs schreiben &amp; Vorlagen anzeigen</button>
-        <button class="btn" id="b-content-done" disabled>Gedruckt – Tags entfernen</button>
-        <button class="btn" data-open data-desk>Ordner öffnen</button>
-        <span class="muted" data-print-status></span>
-      </div>
-      <p class="muted">Boxen mit mindestens einem Bauteil mit Tag <span class="mono" id="tagname"></span>. Auf dem Label stehen alle Bauteile der Box; umrandete Felder sind die getaggten.</p>
+      <h2>Bauteil-Labels <span class="muted">Boxen mit Bauteilen mit Tag <span class="mono" id="tagname"></span></span>
+        <button class="btn ghost sm" data-open data-desk title="Ausgabeordner mit den CSV-Dateien öffnen">Ordner öffnen</button>
+        <button class="btn icon" id="b-content-reload" title="Neu laden (Part-DB erneut abfragen)" aria-label="Neu laden">⟳</button></h2>
+      <ol class="flow" id="content-flow">
+        <li><strong>Drucken</strong><span class="muted">Alle Boxen auf einmal.</span>
+          <div class="row">
+            <button class="btn primary" id="b-content-direct" hidden>Direkt drucken</button>
+            <button class="btn primary" id="b-content-export">CSVs schreiben &amp; Vorlagen anzeigen</button>
+          </div>
+          <div class="hint" data-print-status></div></li>
+        <li><strong>Prüfen</strong><span class="muted">Sind alle Labels sauber gedruckt? Sonst einfach nochmal drucken – die Tags bleiben bis Schritt 3.</span></li>
+        <li><strong>Tags entfernen</strong><span class="muted">Erst danach verschwinden die Bauteile aus dieser Liste.</span>
+          <div class="row"><button class="btn" id="b-content-done" disabled>Gedruckt – Tags entfernen</button></div></li>
+      </ol>
       <div class="msg" id="m-content"></div>
       <div id="content-files"></div>
-      <div id="content-list"></div>
+      <div id="content-list" style="margin-top:14px"></div>
+      <p class="muted" id="content-legend" style="margin:10px 0 0">Auf dem Label stehen alle Bauteile der Box; umrandete Felder sind die getaggten.</p>
     </div>
 
-    <div class="panel">
-      <h2>Inhaltslabel nachdrucken</h2>
-      <p class="muted" style="margin:0 0 10px">Box suchen – nach Box-ID oder Barcode (<span class="mono">S0203</span>, <span class="mono">203</span>),
-        Boxname, Inhalt, Lagerart oder einem Bauteil darin (Name, Bauteil-ID wie <span class="mono">#304</span>, Herstellernummer, Footprint).
-        Mehrere Wörter müssen alle passen. Tags in Part-DB bleiben beim Nachdruck unverändert.</p>
+    <div class="panel" id="reprint-panel" tabindex="-1">
+      <h2>Bauteil-Label nachdrucken</h2>
+      <p class="muted lead">Suche nach Box (<span class="mono">S0203</span>, <span class="mono">203</span>, Name), Inhalt, Lagerart oder Bauteil
+        (Name, <span class="mono">#304</span>, Herstellernummer, Footprint). Mehrere Wörter müssen alle passen. Tags in Part-DB bleiben unverändert.</p>
       <div class="grid"><div><label for="f-reprint">Suche</label>
         <input id="f-reprint" type="search" placeholder="z. B. S0250, MIC-2, ESP32, SOT-23 …" autocomplete="off"></div></div>
       <div class="row">
-        <button class="btn primary" id="b-reprint-direct" hidden>Ausgewählte direkt drucken</button>
-        <button class="btn" id="b-reprint-csv">Ausgewählte als CSV schreiben</button>
-        <span class="muted" id="reprint-count"></span>
+        <button class="btn primary" id="b-reprint-direct" hidden disabled>Ausgewählte direkt drucken</button>
+        <button class="btn" id="b-reprint-csv" disabled>Ausgewählte als CSV schreiben</button>
+        <span class="muted" id="reprint-count" aria-live="polite">Noch nichts ausgewählt</span>
+        <button class="btn ghost sm" id="b-reprint-clear" hidden>Auswahl aufheben</button>
       </div>
       <div class="msg" id="m-reprint"></div>
       <div id="reprint-files"></div>
-      <div id="reprint-list"></div>
+      <div id="reprint-list" style="margin-top:12px"></div>
     </div>
   </section>
 
   <!-- Alle Boxen -->
   <section id="tab-boxes">
     <div class="panel">
-      <div class="grid"><div><label for="f-filter">Filter</label><input id="f-filter" placeholder="Name, Inhalt, Boxfarbe …"></div></div>
-      <div class="tablewrap"><table style="margin-top:12px"><thead><tr><th>Name</th><th>Barcode</th><th>Inhalt</th><th>Boxfarbe</th><th>Lagerart</th><th>Abteile</th><th></th></tr></thead>
-        <tbody id="t-boxes"></tbody></table></div>
+      <h2>Alle Boxen <span class="count" id="c-boxes">–</span> <span class="muted" id="boxes-shown"></span></h2>
+      <div class="grid filters">
+        <div><label for="f-filter">Suche</label><input id="f-filter" type="search" placeholder="Name, Barcode, Inhalt, Boxfarbe …"></div>
+        <div><label for="f-fcontent">Inhalt</label><select id="f-fcontent"><option value="">Alle</option></select></div>
+        <div><label for="f-ftype">Lagerart</label><select id="f-ftype"><option value="">Alle</option></select></div>
+      </div>
       <div class="msg" id="m-boxes"></div>
+      <div class="tablewrap scroll" style="margin-top:12px"><table class="compact rtable"><thead><tr><th>Name</th><th>Barcode</th><th>Inhalt</th><th>Boxfarbe</th><th>Lagerart</th><th>Abteile</th><th class="actions" style="text-align:right">Label nachdrucken</th></tr></thead>
+        <tbody id="t-boxes"></tbody></table></div>
     </div>
   </section>
 
@@ -285,8 +436,9 @@
   <section id="tab-tpl">
     <div class="panel">
       <h2>P-touch-Vorlagen <span class="muted">Vorschau mit Beispieldaten, Bearbeiten im P-touch Editor</span>
-        <button class="btn" id="b-tpl-reload">Neu laden</button></h2>
-      <p class="muted" style="margin:0">Vorlagenordner: <span class="mono" id="tpl-folder">–</span><br><span id="tpl-source" style="display:none"></span><span id="tpl-mode"></span></p>
+        <button class="btn icon" id="b-tpl-reload" title="Neu laden" aria-label="Vorlagen neu laden">⟳</button></h2>
+      <div id="tpl-source" style="display:none"></div>
+      <p class="muted" style="margin:0">Vorlagenordner: <span class="mono" id="tpl-folder">–</span> · <span id="tpl-mode"></span></p>
       <div class="msg" id="m-tpl"></div>
       <div id="tpl-list" style="margin-top:14px"></div>
     </div>
@@ -301,33 +453,48 @@
     </div>
     <div class="msg" id="m-master" style="margin:0 0 16px"></div>
 
-    <div class="panel">
-      <h2>Boxfarben <span class="muted">Feste Palette – jede Farbe hat überall dieselbe Anzeige</span>
-        <button class="btn primary" id="b-color-new">+ Neue Boxfarbe</button></h2>
-      <div class="tablewrap"><table><thead><tr><th>Boxfarbe</th><th>Anzeige (Hex)</th><th>Genutzt von</th><th></th></tr></thead>
+    <details class="panel fold" id="fold-colors" data-fold>
+      <summary><h2>Boxfarben <span class="count" id="c-colors">–</span> <span class="muted">Feste Palette – jede Farbe hat überall dieselbe Anzeige</span></h2></summary>
+      <div class="toolbar">
+        <input type="search" id="q-colors" data-mfilter="color" placeholder="Boxfarbe suchen …" aria-label="Boxfarben durchsuchen">
+        <button class="btn primary" id="b-color-new">+ Neue Boxfarbe</button>
+      </div>
+      <div class="tablewrap"><table class="compact rtable"><thead><tr><th>Boxfarbe</th><th>Anzeige (Hex)</th><th>Genutzt von</th><th></th></tr></thead>
         <tbody id="t-colors"></tbody></table></div>
       <p class="muted">Umbenennen ändert die Farbe bei allen Inhalten mit. Eine Farbe, die noch genutzt wird, lässt sich nicht löschen.</p>
-    </div>
+    </details>
 
-    <div class="panel">
-      <h2>Inhalte <span class="muted">Kürzel steht im Boxnamen, Boxfarbe aus der Palette</span>
-        <button class="btn primary" id="b-cat-new">+ Neuer Inhalt</button></h2>
-      <div class="tablewrap"><table><thead><tr><th>Kürzel</th><th>Name</th><th>Boxfarbe</th><th></th></tr></thead>
+    <details class="panel fold" id="fold-cats" data-fold open>
+      <summary><h2>Inhalte <span class="count" id="c-cats">–</span> <span class="muted">Kürzel steht im Boxnamen, Boxfarbe aus der Palette</span></h2></summary>
+      <div class="toolbar">
+        <input type="search" id="q-cats" data-mfilter="cat" placeholder="Kürzel oder Name suchen …" aria-label="Inhalte durchsuchen">
+        <button class="btn primary" id="b-cat-new">+ Neuer Inhalt</button>
+      </div>
+      <div class="tablewrap"><table class="compact rtable"><thead><tr><th>Kürzel</th><th>Name</th><th>Boxfarbe</th><th></th></tr></thead>
         <tbody id="t-cats"></tbody></table></div>
-    </div>
+    </details>
 
-    <div class="panel">
-      <h2>Lagerarten <span class="muted">Abteile werden bei „Neue Box“ automatisch übernommen</span>
-        <button class="btn primary" id="b-type-new">+ Neue Lagerart</button></h2>
-      <div class="tablewrap"><table><thead><tr><th>Name</th><th>Abteile</th><th>P-touch-Vorlage</th><th>CSV-Datei</th><th></th></tr></thead>
+    <details class="panel fold" id="fold-types" data-fold>
+      <summary><h2>Lagerarten <span class="count" id="c-types">–</span> <span class="muted">Abteile werden bei „Neue Box“ automatisch übernommen</span></h2></summary>
+      <div class="toolbar">
+        <input type="search" id="q-types" data-mfilter="type" placeholder="Lagerart oder Vorlage suchen …" aria-label="Lagerarten durchsuchen">
+        <button class="btn primary" id="b-type-new">+ Neue Lagerart</button>
+      </div>
+      <div class="tablewrap"><table class="compact rtable"><thead><tr><th>Name</th><th>Abteile</th><th>P-touch-Vorlage</th><th>CSV-Datei</th><th></th></tr></thead>
         <tbody id="t-types"></tbody></table></div>
       <p class="muted">Abteile = Anzahl Bauteile auf dem Bauteil-Label. Vorlagen kommen aus <span class="mono" id="tpl-dir"></span>.
         Leere CSV-Datei = <span class="mono">Inhalt_&lt;Name&gt;.csv</span>. Umbenennen ändert keine bestehenden Boxen in Part-DB.</p>
-    </div>
+    </details>
   </section>
 
   <!-- Einstellungen -->
   <section id="tab-settings">
+    <div class="subnav" role="navigation" aria-label="Abschnitte der Einstellungen">
+      <span class="muted">Springen zu:</span>
+      <a href="#set-partdb" data-jump>Part-DB</a><a href="#set-druck" data-jump>Druck</a><a href="#set-helfer" data-jump>Druck-Helfer</a>
+      <a href="#set-install" data-jump>Helfer installieren</a><a href="#set-token" data-jump>Sicherheit</a>
+    </div>
+    <p class="srvinfo" id="src"></p>
     <div class="msg" id="m-settings" style="margin:0 0 16px"></div>
 
     <form class="panel" id="set-partdb" tabindex="-1" autocomplete="off">
@@ -341,8 +508,8 @@
       </div>
       <div class="row"><label class="check"><input type="checkbox" id="s-ssl"> SSL-Zertifikat prüfen</label></div>
       <div class="row">
-        <button type="button" class="btn" id="s-pd-test">Verbindung testen</button>
         <button type="submit" class="btn primary" id="s-pd-save">Speichern</button>
+        <button type="button" class="btn" id="s-pd-test">Verbindung testen</button>
         <button type="button" class="btn" id="s-pd-force" hidden>Ohne Test speichern</button>
         <span class="res" id="s-pd-res" role="status" aria-live="polite"></span>
       </div>
@@ -359,63 +526,80 @@
         <div><label for="s-printer">Drucker</label><select id="s-printer" aria-describedby="s-printer-hint"></select>
           <div class="hint" id="s-printer-hint"></div></div>
       </div>
-      <div class="row"><label class="check"><input type="checkbox" id="s-direct"> Direktdruck anbieten (ohne P-touch Editor)</label></div>
-      <div class="grid" style="margin-top:14px"><div><label for="s-quality">Druckqualität beim Direktdruck</label>
-        <select id="s-quality"></select>
-        <div class="hint">Hohe Auflösung druckt feinere Schrift und Barcodes (z. B. PT-P710BT 180 × 360 dpi), dauert etwas länger.
-          Modelle ohne hohe Auflösung drucken normal. Beim Druck über den P-touch Editor stellst du die Qualität dort im Druckdialog ein.</div></div></div>
-      <div class="grid" style="margin-top:14px"><div><label for="s-dpi">Vorschauqualität (exakte Vorschau über b-PAC)</label>
-        <select id="s-dpi"></select>
-        <div class="hint">Höher = schärfer, aber etwas langsamer. Der Druck selbst ist davon nicht betroffen.</div></div></div>
+      <div class="sechead">Direktdruck</div>
+      <label class="check"><input type="checkbox" id="s-direct"> Direktdruck anbieten (ohne P-touch Editor)</label>
+      <div class="grid" style="margin-top:12px">
+        <div><label for="s-quality">Druckqualität beim Direktdruck</label>
+          <select id="s-quality"></select>
+          <div class="hint">Hohe Auflösung druckt feinere Schrift und Barcodes (z. B. PT-P710BT 180 × 360 dpi), dauert etwas länger.
+            Modelle ohne hohe Auflösung drucken normal. Beim P-touch Editor stellst du die Qualität dort im Druckdialog ein.</div></div>
+        <div><label for="s-dpi">Vorschauqualität (exakte Vorschau über b-PAC)</label>
+          <select id="s-dpi"></select>
+          <div class="hint">Höher = schärfer, aber etwas langsamer. Der Druck selbst ist davon nicht betroffen.</div></div>
+      </div>
       <fieldset style="border:0;padding:0;margin:14px 0 0;min-width:0">
-        <legend class="muted" style="padding:0;margin-bottom:6px">Schnittoptionen beim Direktdruck</legend>
+        <legend class="muted" style="padding:0;margin-bottom:6px">Schnittoptionen beim Direktdruck <span id="s-cuts-model"></span></legend>
         <div class="checks" id="s-cuts"></div>
       </fieldset>
-      <div class="row"><label class="check"><input type="checkbox" id="s-csv-dl"> Geschriebene CSV-Dateien automatisch herunterladen
-        <span class="muted">(gilt für diesen Browser)</span></label></div>
+      <div class="sechead">Dieser Browser</div>
+      <label class="check"><input type="checkbox" id="s-csv-dl"> Geschriebene CSV-Dateien automatisch herunterladen
+        <span class="muted">(wird sofort übernommen)</span></label>
       <div class="row"><button type="submit" class="btn primary" id="s-pr-save">Speichern</button></div>
       <div class="msg" id="m-set-druck"></div>
     </form>
 
     <div class="panel" id="set-helfer" tabindex="-1">
-      <h2>Druck-Helfer <span class="muted">Windows-PC mit P-touch Editor und Drucker</span></h2>
+      <h2>Druck-Helfer <span class="muted">Status – Windows-PC mit P-touch Editor und Drucker</span></h2>
+      <div id="s-helper-alert"></div>
       <dl class="kv" id="s-helper-info"></dl>
+    </div>
+
+    <div class="panel" id="set-install" tabindex="-1">
+      <h2>Helfer installieren &amp; aktualisieren</h2>
       <div id="s-upd" hidden>
-        <div class="row">
+        <div class="row" style="margin-top:6px">
           <button type="button" class="btn primary" id="s-upd-btn">Helfer aktualisieren</button>
           <span class="muted" id="s-upd-text"></span>
         </div>
         <p class="hint" id="s-upd-hint">Der Helfer lädt das Setup vom Server und startet es. Am Windows-PC fragt Windows nach Administratorrechten (Benutzerkontensteuerung) – dort mit „Ja“ bestätigen. Einstellungen und Autostart bleiben erhalten.</p>
         <div class="msg" id="m-upd" role="status" aria-live="polite"></div>
       </div>
-      <div id="s-inst" hidden>
-        <div class="row">
-          <a class="btn primary" id="s-inst-dl" href="/api/helfer/installer" download="Labeltool-Helfer-Installer.zip">Installer herunterladen (empfohlen)</a>
+      <details class="fold subfold" id="s-inst-fold">
+        <summary>Anleitung: Helfer am Windows-PC installieren</summary>
+        <div id="s-inst" hidden>
+          <div class="row">
+            <a class="btn primary" id="s-inst-dl" href="/api/helfer/installer" download="Labeltool-Helfer-Installer.zip">Installer herunterladen (empfohlen)</a>
+          </div>
+          <ol class="steps" id="s-inst-steps">
+            <li>ZIP herunterladen und <strong>entpacken</strong> (Rechtsklick → „Alle extrahieren …“) – Setup und <span class="mono">helfer.vorgabe.yaml</span> müssen im selben Ordner liegen.</li>
+            <li><span class="mono">Labeltool-Helfer-Setup.exe</span> starten. Meldet Windows SmartScreen „Der Computer wurde durch Windows geschützt“: „Weitere Informationen“ → „Trotzdem ausführen“; die Rückfrage nach Administratorrechten mit „Ja“ bestätigen.</li>
+            <li>Installieren (Autostart ist voreingestellt). Am Ende öffnet sich der Assistent: Server und Token sind schon eingetragen – Vorlagen-Ordner und Druckermodell wählen, „Speichern &amp; starten“.</li>
+            <li>Später ändern: Startmenü → „Druck-Helfer einrichten“. Update: oben per „Helfer aktualisieren“ oder neues Setup drüber installieren. Voraussetzungen: P-touch Editor, b-PAC Client (64 bit) – kein Python nötig.</li>
+          </ol>
         </div>
-        <ol class="steps" id="s-inst-steps">
-          <li>ZIP herunterladen und <strong>entpacken</strong> (Rechtsklick → „Alle extrahieren …“) – Setup und <span class="mono">helfer.vorgabe.yaml</span> müssen im selben Ordner liegen.</li>
-          <li><span class="mono">Labeltool-Helfer-Setup.exe</span> starten. Meldet Windows SmartScreen „Der Computer wurde durch Windows geschützt“: „Weitere Informationen“ → „Trotzdem ausführen“; die Rückfrage nach Administratorrechten mit „Ja“ bestätigen.</li>
-          <li>Installieren (Autostart ist voreingestellt). Am Ende öffnet sich der Assistent: Server und Token sind schon eingetragen – Vorlagen-Ordner und Druckermodell wählen, „Speichern &amp; starten“.</li>
-          <li>Später ändern: Startmenü → „Druck-Helfer einrichten“. Update: oben per „Helfer aktualisieren“ oder neues Setup drüber installieren. Voraussetzungen: P-touch Editor, b-PAC Client (64 bit) – kein Python nötig.</li>
-        </ol>
-      </div>
-      <p class="hint" id="s-inst-none" hidden>Auf diesem Server liegt kein Windows-Installer (z. B. selbst gebautes Image). Den Helfer gibt es hier als Python-Paket; der Installer ist bei den Versionen auf GitHub als Release-Asset erhältlich.</p>
-      <details id="s-alt" style="margin-top:10px">
-        <summary id="s-alt-sum">Alternative ohne Installation (Python nötig)</summary>
-        <div class="row">
-          <a class="btn" id="s-helper-dl" href="/api/helfer/download" download="Labeltool-Helfer.zip">Helfer als Python-Paket herunterladen</a>
-        </div>
-        <ol class="steps" id="s-helper-steps">
-          <li>ZIP herunterladen und in einen festen Ordner entpacken (z. B. <span class="mono">C:\Labeltool-Helfer</span>).</li>
-          <li><span class="mono">helfer.bat</span> doppelklicken – beim ersten Start wird Python eingerichtet, dann öffnet sich der Assistent.</li>
-          <li>Im Assistenten Vorlagen-Ordner und Druckermodell wählen (Server und Token sind schon eingetragen), „Speichern &amp; starten“.</li>
-          <li>Später ändern: <span class="mono">helfer.bat einrichten</span>. Voraussetzungen: Python 3, P-touch Editor, b-PAC Client (64 bit).</li>
-        </ol>
+        <p class="hint" id="s-inst-none" hidden>Auf diesem Server liegt kein Windows-Installer (z. B. selbst gebautes Image). Den Helfer gibt es hier als Python-Paket; der Installer ist bei den Versionen auf GitHub als Release-Asset erhältlich.</p>
+        <details id="s-alt" style="margin-top:10px">
+          <summary id="s-alt-sum">Alternative ohne Installation (Python nötig)</summary>
+          <div class="row">
+            <a class="btn" id="s-helper-dl" href="/api/helfer/download" download="Labeltool-Helfer.zip">Helfer als Python-Paket herunterladen</a>
+          </div>
+          <ol class="steps" id="s-helper-steps">
+            <li>ZIP herunterladen und in einen festen Ordner entpacken (z. B. <span class="mono">C:\Labeltool-Helfer</span>).</li>
+            <li><span class="mono">helfer.bat</span> doppelklicken – beim ersten Start wird Python eingerichtet, dann öffnet sich der Assistent.</li>
+            <li>Im Assistenten Vorlagen-Ordner und Druckermodell wählen (Server und Token sind schon eingetragen), „Speichern &amp; starten“.</li>
+            <li>Später ändern: <span class="mono">helfer.bat einrichten</span>. Voraussetzungen: Python 3, P-touch Editor, b-PAC Client (64 bit).</li>
+          </ol>
+        </details>
+        <p class="hint" style="margin-top:10px">Beide Downloads enthalten die Server-Adresse und den aktuellen Helfer-Token (gibt es noch keinen, wird er beim Herunterladen erzeugt) – nicht weitergeben.</p>
       </details>
-      <div class="row">
+    </div>
+
+    <div class="panel" id="set-token" tabindex="-1">
+      <h2>Sicherheit <span class="muted">Helfer-Token</span></h2>
+      <p class="muted lead">Der Token verbindet den Druck-Helfer mit diesem Server. Neu erzeugen, wenn er weitergegeben wurde – der verbundene Helfer wird dann getrennt.</p>
+      <div class="row" style="margin-top:0">
         <button type="button" class="btn" id="s-newtoken">Helfer-Token neu erzeugen …</button>
       </div>
-      <p class="hint" style="margin-top:6px">Beide Downloads enthalten die Server-Adresse und den aktuellen Helfer-Token (gibt es noch keinen, wird er beim Herunterladen erzeugt) – nicht weitergeben.</p>
       <div class="secret" id="s-secret" hidden>
         <strong>Neuer Helfer-Token</strong>
         <p class="muted" style="margin:2px 0 8px">Wird nur jetzt angezeigt. Am Windows-PC im Assistenten eintragen (Startmenü → „Druck-Helfer einrichten“ bzw. <span class="mono">helfer.bat einrichten</span>) – oder den Installer neu herunterladen und erneut installieren. Von Hand: in <span class="mono">helfer.yaml</span> eintragen (installiert: <span class="mono">%LOCALAPPDATA%\Labeltool-Helfer\</span>) und den Helfer neu starten.</p>
@@ -462,6 +646,13 @@ function showTab(tab) {
     if (x.dataset.tab === tab) x.setAttribute("aria-current", "page"); else x.removeAttribute("aria-current");
   });
   document.querySelectorAll("section").forEach(s => s.classList.toggle("active", s.id === "tab-" + tab));
+  // Handy: aktiven Reiter in der waagrecht scrollbaren Leiste sichtbar machen (ohne die Seite zu verschieben)
+  const nav = $("nav"), btn = nav.querySelector(`button[data-tab="${tab}"]`);
+  if (btn && nav.scrollWidth > nav.clientWidth) {
+    const l = btn.offsetLeft - nav.offsetLeft, r = l + btn.offsetWidth;
+    if (l < nav.scrollLeft + 16 || r > nav.scrollLeft + nav.clientWidth - 40)
+      nav.scrollTo({left: Math.max(0, l - 24), behavior: "smooth"});
+  }
   ({names: loadNames, content: loadContent, boxes: loadBoxes, tpl: loadTemplates, master: loadMaster, settings: loadSettings})[tab]?.();
 }
 document.querySelectorAll("nav button").forEach(b => b.onclick = () => showTab(b.dataset.tab));
@@ -473,11 +664,22 @@ document.querySelectorAll(".stchip").forEach(c => c.onclick = () => {
   el?.focus({preventScroll: true});
 });
 document.querySelectorAll("[data-open]").forEach(b => b.onclick = () => call("POST", "/api/open-output").catch(e => alert(e.message)));
+// Sprungmarken in den Einstellungen: Abschnitt zeigen und fokussieren (Tastatur/Screenreader)
+document.querySelectorAll("[data-jump]").forEach(a => a.onclick = e => {
+  e.preventDefault();
+  const el = document.querySelector(a.getAttribute("href"));
+  el?.scrollIntoView({block: "start", behavior: "smooth"});
+  el?.focus({preventScroll: true});
+});
+// Server-Info (früher in der Kopfzeile) – jetzt als Info-Zeile in den Einstellungen
+function renderSrvInfo() {
+  if (META) $("#src").textContent = `Server: ${location.origin} · Part-DB: ${META.partdb} · Ausgabeordner (auf dem Server): ${META.ausgabe}`;
+}
 
 // ---------- Neue Box
 async function init() {
   META = await call("GET", "/api/meta");
-  $("#src").textContent = `${META.partdb} · Ausgabe: ${META.ausgabe}`;
+  renderSrvInfo();
   $("#tagname").textContent = META.tag;
   fillSelects();
   ["#f-abbr", "#f-comp", "#f-count", "#f-color"].forEach(s => $(s).addEventListener("input", preview));
@@ -491,10 +693,15 @@ async function loadPrintStatus() {
   renderPrintStatus();
 }
 // Knöpfe/Hinweise aus PRINT (/api/print-status) und STATUS (/api/status: Helfer, Drucker) ableiten
+// Wie viel gerade zu drucken ist – Druckknöpfe sind nur aktiv, wenn es etwas gibt
+const QUEUE = {names: 0, content: 0};
+const nothingFor = b => b.matches("[data-direct-names]") ? !QUEUE.names
+  : b.id === "b-content-direct" ? !QUEUE.content : b.id === "b-reprint-direct" ? !REPRINT.sel.size : false;
+const directDisabled = b => !printGate().ok || nothingFor(b);
 function renderPrintStatus() {
   const g = printGate();
   const direct = [...document.querySelectorAll("[data-direct-names]"), $("#b-content-direct"), $("#b-reprint-direct")];
-  direct.forEach(b => { b.hidden = !PRINT.aktiv; b.disabled = !g.ok; b.title = g.ok ? "" : g.grund; });
+  direct.forEach(b => { b.hidden = !PRINT.aktiv; b.disabled = !g.ok || nothingFor(b); b.title = g.ok ? "" : g.grund; });
   // Mit Direktdruck wird der CSV-Weg zum Zweitweg
   document.querySelectorAll("[data-print-names], #b-content-export, #b-reprint-csv").forEach(b => b.classList.toggle("primary", !g.ok));
   const link = !PRINT.ok && PRINT.hilfe_url ? ` <a href="${esc(PRINT.hilfe_url)}" target="_blank" rel="noopener">Zum Download bei Brother</a>` : "";
@@ -523,6 +730,8 @@ function deskGate() {
 // Sperrt [data-desk]-Knöpfe (nur die, die wir selbst gesperrt haben, werden wieder freigegeben) und erklärt Vorschau/CSV-Knöpfe
 function applyGates() {
   const g = deskGate();
+  // „Ordner öffnen“ ergibt nur Sinn, wenn der Ordner auch geöffnet werden kann (lokal oder Helfer verbunden)
+  document.querySelectorAll("[data-open]").forEach(b => { b.hidden = !g.ok; });
   document.querySelectorAll("[data-desk]").forEach(b => {
     if (!g.ok) {
       if (!b.disabled || b.dataset.locked) { b.disabled = true; b.dataset.locked = "1"; b.title = g.grund; }
@@ -554,15 +763,19 @@ async function loadStatus(neu = false) {
   if (sig !== statusSig) { const first = !statusSig; statusSig = sig; if (!first) loadPrintStatus(); else renderPrintStatus(); }
   else renderPrintStatus();
   checkUpdateProgress();
-  if ($("#tab-settings").classList.contains("active") && SET) { renderHelperInfo(); fillPrinterSelect($("#s-printer").value); }
+  if ($("#tab-settings").classList.contains("active") && SET) {
+    renderHelperInfo(); fillPrinterSelect($("#s-printer").value);
+    if ((cutModel()?.model || "") !== CUT_SIG) renderCuts();
+  }
   renderTplSource();
 }
-function setChip(id, cls, text, title) {
+// det = Zusatz, der am Handy ausgeblendet wird (z. B. Rechnername, Bandbreite)
+function setChip(id, cls, text, title, det = "") {
   const c = $(id);
   c.className = "stchip" + (cls ? " " + cls : "");
-  c.lastElementChild.textContent = text;
+  c.lastElementChild.innerHTML = esc(text) + (det ? `<span class="det">${esc(det)}</span>` : "");
   c.title = title + "\n\nKlick: Einstellungen öffnen";
-  c.setAttribute("aria-label", `${text}. ${title.replace(/\n/g, ". ")}`);
+  c.setAttribute("aria-label", `${text}${det}. ${title.replace(/\n/g, ". ")}`);
 }
 function renderStatus() {
   if (!STATUS) {
@@ -583,11 +796,12 @@ function renderStatus() {
 
   const lokal = h.modus !== "helfer";
   let hc, ht;
-  if (lokal) { hc = h.bpac === false ? "warn" : "ok"; ht = "lokal (dieser PC)"; }
+  if (lokal) { hc = h.bpac === false ? "warn" : "ok"; ht = "lokal"; }
   else if (UPD) { hc = "warn"; ht = "Update läuft …"; }
   else if (h.verbunden && h.update?.verfuegbar) { hc = "warn"; ht = "Update verfügbar"; }
-  else if (h.verbunden) { hc = "ok"; ht = "verbunden" + (h.rechner ? ` (${h.rechner})` : ""); }
+  else if (h.verbunden) { hc = "ok"; ht = "verbunden"; }
   else { hc = "err"; ht = "nicht verbunden"; }
+  const hdet = lokal ? " (dieser PC)" : !lokal && h.verbunden && !UPD && !h.update?.verfuegbar && h.rechner ? ` (${h.rechner})` : "";
   setChip("#st-helfer", hc, `Helfer: ${ht}`, [
     `Helfer: ${ht}`,
     `Modus: ${lokal ? "lokal – b-PAC/P-touch auf dem Rechner, auf dem der Server läuft" : "Helfer – Windows-PC per Druck-Helfer"}`,
@@ -600,7 +814,7 @@ function renderStatus() {
     h.bpac !== undefined && `b-PAC: ${h.bpac ? "installiert" : "nicht verfügbar"}`,
     h.drucker_liste?.length && `Drucker installiert: ${h.drucker_liste.join(", ")}`,
     !lokal && !h.verbunden && "Am Windows-PC den Helfer (helfer.bat) starten.",
-    `Geprüft: ${fmtTime(STATUS_AT)}`].filter(Boolean).join("\n"));
+    `Geprüft: ${fmtTime(STATUS_AT)}`].filter(Boolean).join("\n"), hdet);
 
   let dc, dt;
   if (helperMissing()) { dc = ""; dt = "unbekannt"; }
@@ -609,12 +823,12 @@ function renderStatus() {
   else if (d.angeschlossen === true) { dc = "warn"; dt = "nicht bereit"; }
   else { dc = ""; dt = "unbekannt"; }
   const band = d.band && !helperMissing() ? ` · ${d.band}` : "";
-  setChip("#st-drucker", dc, `Drucker: ${dt}${band}`, [
+  setChip("#st-drucker", dc, `Drucker: ${dt}`, [
     `Drucker: ${dt}`, `Name: ${d.name || "(aus der Vorlage)"}`, d.status_text && `Status: ${d.status_text}`,
     d.band && `Eingelegtes Band: ${d.band}`,
     `Angeschlossen: ${yesNo(d.angeschlossen)}`, d.bereit !== undefined && `Direktdruck möglich: ${yesNo(d.bereit)}`,
     helperMissing() && "Ohne verbundenen Helfer nicht prüfbar.", PRINT.aktiv === false && "Direktdruck ist ausgeschaltet.",
-    `Geprüft: ${fmtTime(STATUS_AT)}`].filter(Boolean).join("\n"));
+    `Geprüft: ${fmtTime(STATUS_AT)}`].filter(Boolean).join("\n"), band);
 }
 setInterval(() => { if (!document.hidden) loadStatus(); }, 15000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) loadStatus(); });
@@ -625,13 +839,14 @@ function afterSettingsChange() {
   call("GET", "/api/meta").then(m => {
     if (!META) return;
     Object.assign(META, {partdb: m.partdb, ausgabe: m.ausgabe, bpac_vorschau: m.bpac_vorschau});
-    $("#src").textContent = `${META.partdb} · Ausgabe: ${META.ausgabe}`;
+    renderSrvInfo();
   }).catch(() => {});
 }
 function fillSelects() {
   const abbr = $("#f-abbr").value, type = $("#f-type").value;
   const color = $("#f-color").value;
-  $("#f-abbr").innerHTML = META.kategorien.map(c => `<option value="${esc(c.key)}">${esc(c.name)} (${esc(c.key)}) – ${esc(c.color)}</option>`).join("");
+  // „M1.6 – Hell Blau“ statt „M1.6 (M1.6) – Hell Blau“, wenn Name und Kürzel gleich sind
+  $("#f-abbr").innerHTML = META.kategorien.map(c => `<option value="${esc(c.key)}">${esc(c.name)}${c.name === c.key ? "" : ` (${esc(c.key)})`} – ${esc(c.color)}</option>`).join("");
   $("#f-color").innerHTML = `<option value="">Standard des Inhalts</option>`
     + META.farben.map(f => `<option value="${esc(f.name)}">${esc(f.name)}</option>`).join("");
   if (META.farben.some(f => f.name === color)) $("#f-color").value = color;
@@ -651,7 +866,12 @@ function updateCompHint() {
     ? `Standard für ${t.name}` : `Abweichend – ${t.name} hat ${t.compartments}`);
 }
 let pvTimer;
+function createLabel() {
+  const n = Math.max(1, +$("#f-count").value || 1);
+  $("#b-create").textContent = n === 1 ? "1 Box in Part-DB anlegen" : `${n} Boxen in Part-DB anlegen`;
+}
 function preview() {
+  createLabel();
   clearTimeout(pvTimer);
   pvTimer = setTimeout(async () => {
     const cat = META.kategorien.find(c => c.key === $("#f-abbr").value);
@@ -733,18 +953,24 @@ async function confirmPrint(art, ids, titel) {
 async function loadNames() {
   try {
     const r = await call("GET", "/api/name-labels");
-    $("#c-names").textContent = r.boxes.length;
-    $("#c-new-queue").textContent = r.boxes.length;
-    $("#t-new-queue").innerHTML = r.boxes.map(b => `<tr><td class="mono">${esc(b.name)}</td><td class="mono">${esc(b.barcode)}</td>
-      <td>${esc(b.content)}</td><td>${sw(b.color_hex)}${esc(b.color)}</td><td>${esc(b.box_type)}</td><td>${esc(b.compartments)}</td>
-      <td class="actions">${pvRowButton(b, "q", 7)} <button class="btn" onclick="unqueue(${b.id})">Entfernen</button></td></tr>`).join("")
-      || `<tr><td colspan="7" class="muted">Alle Boxen haben ein Label.</td></tr>`;
-    document.querySelectorAll("[data-print-names]").forEach(b => b.disabled = !r.boxes.length);
-    document.querySelectorAll("[data-names-done]").forEach(b => b.disabled = !r.last_export.length);
-    $("#t-names").innerHTML = r.boxes.map(b => `<tr><td class="mono">${esc(b.name)}</td><td class="mono">${esc(b.barcode)}</td>
-      <td>${esc(b.content)}</td><td>${sw(b.color_hex)}${esc(b.color)}</td><td>${esc(b.box_type)}</td>
-      <td class="actions">${pvRowButton(b, "n", 6)} <button class="btn" onclick="unqueue(${b.id})">Entfernen</button></td></tr>`).join("")
-      || `<tr><td colspan="6" class="muted">Warteschlange leer.</td></tr>`;
+    const n = r.boxes.length;
+    QUEUE.names = n;
+    $("#c-names").textContent = n;
+    $("#c-names").classList.toggle("hot", n > 0);
+    $("#c-new-queue").textContent = n;
+    const cells = b => `<td class="mono lead1">${esc(b.name)}</td><td class="mono" data-label="Barcode">${esc(b.barcode)}</td>
+      <td data-label="Inhalt">${esc(b.content)}</td><td data-label="Boxfarbe">${sw(b.color_hex)}${esc(b.color)}</td><td data-label="Lagerart">${esc(b.box_type)}</td>`;
+    const remove = b => `<button class="btn del" onclick="unqueue(${b.id})" title="Aus der Warteschlange nehmen (Box bleibt in Part-DB)">Entfernen</button>`;
+    $("#t-new-queue").innerHTML = r.boxes.map(b => `<tr>${cells(b)}<td data-label="Abteile">${esc(b.compartments)}</td>
+      <td class="actions">${pvRowButton(b, "q", 7)} ${remove(b)}</td></tr>`).join("");
+    $("#t-names").innerHTML = r.boxes.map(b => `<tr>${cells(b)}
+      <td class="actions">${pvRowButton(b, "n", 6)} ${remove(b)}</td></tr>`).join("");
+    // Leere Warteschlange: Hinweis statt leerer Tabelle
+    document.querySelectorAll("[data-queue-table]").forEach(el => el.hidden = !n);
+    document.querySelectorAll("[data-queue-empty]").forEach(el => el.hidden = !!n);
+    document.querySelectorAll("[data-print-names]").forEach(b => b.disabled = !n);
+    document.querySelectorAll("[data-names-done]").forEach(b => b.disabled = !n || !r.last_export.length);
+    document.querySelectorAll("[data-direct-names]").forEach(b => b.disabled = directDisabled(b));
     sweepPreviews(); applyGates();
     if (r.missing.length) msg("#m-names", `In Part-DB nicht mehr vorhanden: ${r.missing.join(", ")}`, false);
   } catch (e) { msg("#m-names", e.message, false); }
@@ -766,12 +992,12 @@ document.querySelectorAll("[data-direct-names]").forEach(b => b.onclick = async 
   b.disabled = true;
   try {
     const opts = await confirmPrint("box", [], "Box-Labels");
-    if (!opts) { msg(namesMsg(), "Druck nicht bestätigt – nichts gedruckt.", false); b.disabled = !printGate().ok; return; }
+    if (!opts) { msg(namesMsg(), "Druck nicht bestätigt – nichts gedruckt.", false); b.disabled = directDisabled(b); return; }
     const r = await call("POST", "/api/name-labels/print", opts);
     msg(namesMsg(), `${r.gedruckt} Box-Label(s) an den Drucker geschickt: ${r.boxen.join(", ")}\nWenn alle sauber rausgekommen sind: „Gedruckt ✓“.`);
     loadNames();
   } catch (e) { msg(namesMsg(), e.message, false); }
-  b.disabled = !printGate().ok;
+  b.disabled = directDisabled(b);
 });
 document.querySelectorAll("[data-names-done]").forEach(b => b.onclick = async () => {
   try { const r = await call("POST", "/api/name-labels/done"); msg(namesMsg(), `${r.erledigt} Box(en) als beschriftet markiert.`); loadNames(); }
@@ -783,7 +1009,15 @@ async function loadContent() {
   $("#content-list").innerHTML = `<p class="muted">Lade …</p>`;
   try {
     const list = await call("GET", "/api/content-labels");
+    QUEUE.content = list.length;
     $("#c-content").textContent = list.length;
+    $("#c-content").classList.toggle("hot", list.length > 0);
+    // Leer: Ablauf und Legende ausblenden – außer der Tag-Schritt steht nach einem Export noch aus
+    const pending = !$("#b-content-done").disabled;
+    $("#content-flow").hidden = !list.length && !pending;
+    $("#content-legend").hidden = !list.length;
+    $("#b-content-export").disabled = !list.length;
+    $("#b-content-direct").disabled = directDisabled($("#b-content-direct"));
     $("#content-list").innerHTML = list.map(l => `
       <div class="card">
         <h3>${sw(l.box.color_hex)}<span class="mono">${esc(l.box.name)}</span>
@@ -793,10 +1027,12 @@ async function loadContent() {
           ${l.slots.map((s, i) => `<div class="slot ${s && s.tag ? "tag" : ""}"><small>${i + 1}</small>${s ? esc(s.name) + `<small>${esc(s.footprint)}</small>` : ""}</div>`).join("")}
         </div>
         ${l.warnungen.map(w => `<div class="warn">${esc(w)}</div>`).join("")}
-        <div class="row" style="margin-top:8px"><button class="btn" data-pv aria-expanded="false" aria-controls="pv-c-${l.box.id}"
+        <div class="row" style="margin-top:8px"><button class="btn sm" data-pv aria-expanded="false" aria-controls="pv-c-${l.box.id}"
           onclick="toggleCardPreview(this, ${l.box.id}, ${jsArg(l.box.name)})">Vorschau</button></div>
         <div class="labelstage" id="pv-c-${l.box.id}" aria-live="polite" hidden></div>
-      </div>`).join("") || `<p class="muted">Keine Bauteile mit Tag gefunden.</p>`;
+      </div>`).join("") || `<div class="empty"><span class="ico" aria-hidden="true">✓</span><strong>Alles beschriftet</strong>
+        Kein Bauteil trägt gerade den Tag <span class="mono">${esc(META?.tag || "")}</span>. Markierst du in Part-DB ein Bauteil damit,
+        erscheint seine Box hier – mit „⟳“ neu laden. Einzelne Boxen druckst du unten nach.</div>`;
     sweepPreviews(); applyGates();
   } catch (e) { $("#content-list").innerHTML = ""; msg("#m-content", e.message, false); }
 }
@@ -814,14 +1050,14 @@ $("#b-content-direct").onclick = async () => {
   const b = $("#b-content-direct"); b.disabled = true;
   try {
     const opts = await confirmPrint("bauteile", [], "Bauteil-Labels");
-    if (!opts) { msg("#m-content", "Druck nicht bestätigt – nichts gedruckt.", false); b.disabled = !printGate().ok; return; }
+    if (!opts) { msg("#m-content", "Druck nicht bestätigt – nichts gedruckt.", false); b.disabled = directDisabled(b); return; }
     const r = await call("POST", "/api/content-labels/print", opts);
     const lines = r.gedruckt.map(g => `${g.vorlage}: ${g.labels} Label(s)`);
     if (r.uebersprungen.length) lines.push(`Ohne Vorlage übersprungen: ${r.uebersprungen.join(", ")}`);
     msg("#m-content", `Gedruckt:\n${lines.join("\n")}\nWenn alles passt: „Gedruckt – Tags entfernen“.`, !r.uebersprungen.length);
     $("#b-content-done").disabled = !r.bauteile;
   } catch (e) { msg("#m-content", e.message, false); }
-  b.disabled = !printGate().ok;
+  b.disabled = directDisabled(b);
 };
 $("#b-content-done").onclick = async () => {
   if (!confirm(`Tag "${META.tag}" bei den exportierten Bauteilen in Part-DB entfernen?`)) return;
@@ -882,7 +1118,7 @@ function renderReprint() {
   $("#reprint-list").innerHTML = !q ? "" : hits.map(l => {
     const id = l.box.id, checked = REPRINT.sel.has(id) ? "checked" : "";
     const match = (l.passende_bauteile || []).length ? `<div class="muted">Passend: ${esc(l.passende_bauteile.join(", "))}</div>` : "";
-    return `<div class="card">
+    return `<div class="card${checked ? " sel" : ""}">
       <h3><input type="checkbox" id="rp-${id}" ${checked} onchange="reprintToggle(${id}, this.checked)" aria-label="${esc(l.box.name)} auswählen">
         <label for="rp-${id}" style="display:contents">${sw(l.box.color_hex)}<span class="mono">${esc(l.box.name)}</span></label>
         <span class="muted">${esc(l.box.barcode)} · ${esc(l.box.content)} · ${esc(l.box.box_type || "ohne Lagerart")}</span></h3>
@@ -891,18 +1127,38 @@ function renderReprint() {
         ${l.slots.map((s, i) => `<div class="slot"><small>${i + 1}</small>${s ? esc(s.name) + `<small>${esc(s.footprint)}</small>` : ""}</div>`).join("")}
       </div>
       ${l.warnungen.map(w => `<div class="warn">${esc(w)}</div>`).join("")}
-      <div class="row" style="margin-top:8px"><button class="btn" data-pv aria-expanded="false" aria-controls="pv-n-${id}"
+      <div class="row" style="margin-top:8px"><button class="btn sm" data-pv aria-expanded="false" aria-controls="pv-n-${id}"
         onclick="toggleCardPreview(this, ${id}, ${jsArg(l.box.name)}, 'pv-n-')">Vorschau</button></div>
       <div class="labelstage" id="pv-n-${id}" aria-live="polite" hidden></div>
     </div>`;
   }).join("") || `<p class="muted">Keine Box gefunden.</p>`;
   updateReprintCount(); sweepPreviews(); applyGates();
 }
-function reprintToggle(id, on) { on ? REPRINT.sel.add(id) : REPRINT.sel.delete(id); updateReprintCount(); }
+function reprintToggle(id, on) {
+  on ? REPRINT.sel.add(id) : REPRINT.sel.delete(id);
+  document.getElementById("rp-" + id)?.closest(".card")?.classList.toggle("sel", on);
+  updateReprintCount();
+}
 function updateReprintCount() {
   const n = REPRINT.sel.size;
-  $("#reprint-count").textContent = n ? `${n} Box(en) ausgewählt` + (n > REPRINT.hits.filter(h => REPRINT.sel.has(h.box.id)).length
-    ? " (auch aus früheren Suchen)" : "") : "";
+  $("#reprint-count").textContent = n ? `${n} Box${n === 1 ? "" : "en"} ausgewählt` + (n > REPRINT.hits.filter(h => REPRINT.sel.has(h.box.id)).length
+    ? " (auch aus früheren Suchen)" : "") : "Noch nichts ausgewählt";
+  $("#b-reprint-clear").hidden = !n;
+  $("#b-reprint-csv").disabled = !n;
+  $("#b-reprint-direct").disabled = directDisabled($("#b-reprint-direct"));
+}
+$("#b-reprint-clear").onclick = () => { REPRINT.sel.clear(); renderReprint(); };
+// Aus „Alle Boxen“: Box in die Nachdruck-Auswahl übernehmen und zum Nachdruck springen
+function reprintBox(id) {
+  const b = BOXES.find(x => x.id === id);
+  if (!b) return;
+  REPRINT.sel.add(id);
+  showTab("content");
+  $("#f-reprint").value = b.barcode || b.name;
+  reprintSearch(true);
+  const p = $("#reprint-panel");
+  p.scrollIntoView({block: "start", behavior: "smooth"});
+  p.focus({preventScroll: true});
 }
 async function reprint(direkt) {
   const ids = [...REPRINT.sel];
@@ -912,7 +1168,7 @@ async function reprint(direkt) {
     let opts = {};
     if (direkt) {
       opts = await confirmPrint("nachdruck", ids, "Nachdruck");
-      if (!opts) { msg("#m-reprint", "Druck nicht bestätigt – nichts gedruckt.", false); btn.disabled = !printGate().ok; return; }
+      if (!opts) { msg("#m-reprint", "Druck nicht bestätigt – nichts gedruckt.", false); updateReprintCount(); return; }
     }
     const r = await call("POST", "/api/content-labels/nachdruck", {ids, direkt, ...opts});
     if (direkt) {
@@ -927,7 +1183,7 @@ async function reprint(direkt) {
     }
     REPRINT.sel.clear(); renderReprint();
   } catch (e) { msg("#m-reprint", e.message, false); }
-  btn.disabled = direkt ? !printGate().ok : false;
+  updateReprintCount();
   applyGates();
 }
 $("#f-reprint").addEventListener("input", () => reprintSearch());
@@ -943,18 +1199,45 @@ async function openTemplate(boxType, btn) {
 
 // ---------- Alle Boxen
 async function loadBoxes() {
-  try { BOXES = await call("GET", "/api/boxes"); renderBoxes(); }
-  catch (e) { msg("#m-boxes", e.message, false); }
+  if (!BOXES.length) $("#t-boxes").innerHTML = `<tr><td colspan="7" class="muted">Lade …</td></tr>`;
+  try { BOXES = await call("GET", "/api/boxes"); fillBoxFilters(); renderBoxes(); }
+  catch (e) { $("#t-boxes").innerHTML = ""; msg("#m-boxes", e.message, false); }
+}
+// Auswahlfilter aus den vorhandenen Boxen (Auswahl bleibt erhalten, solange es den Wert noch gibt)
+function fillBoxFilters() {
+  const fill = (sel, values, none) => {
+    const cur = sel.value;
+    sel.innerHTML = `<option value="">Alle</option>` + values.map(v => `<option value="${esc(v)}">${esc(v || none)}</option>`).join("");
+    sel.value = values.includes(cur) ? cur : "";
+  };
+  const uniq = key => [...new Set(BOXES.map(b => b[key] || ""))].sort((a, b) => !a - !b || a.localeCompare(b, "de", {numeric: true}));
+  fill($("#f-fcontent"), uniq("content"), "(ohne Inhalt)");
+  fill($("#f-ftype"), uniq("box_type"), "(ohne Lagerart)");
 }
 function renderBoxes() {
-  const q = $("#f-filter").value.toLowerCase();
-  $("#t-boxes").innerHTML = BOXES.filter(b => !q || [b.name, b.content, b.color, b.box_type, b.barcode].join(" ").toLowerCase().includes(q))
-    .map(b => `<tr><td class="mono">${esc(b.name)}</td><td class="mono">${esc(b.barcode)}</td><td>${esc(b.content)}</td>
-      <td>${sw(b.color_hex)}${esc(b.color)}</td><td>${esc(b.box_type)}</td><td>${esc(b.compartments)}</td>
-      <td>${b.in_queue ? `<span class="muted">in Warteschlange</span>` : `<button class="btn" onclick="requeue(${b.id})">Box-Label nachdrucken</button>`}</td></tr>`).join("");
+  const q = $("#f-filter").value.trim().toLowerCase(), fc = $("#f-fcontent").value, ft = $("#f-ftype").value;
+  const anyFilter = q || fc || ft;
+  const list = BOXES.filter(b => (!q || [b.name, b.content, b.color, b.box_type, b.barcode].join(" ").toLowerCase().includes(q))
+    && (!fc || (b.content || "") === fc) && (!ft || (b.box_type || "") === ft));
+  $("#c-boxes").textContent = BOXES.length;
+  $("#boxes-shown").textContent = anyFilter ? `${list.length} von ${BOXES.length} angezeigt` : `Box${BOXES.length === 1 ? "" : "en"} in Part-DB`;
+  $("#t-boxes").innerHTML = list.map(b => `<tr><td class="mono lead1">${esc(b.name)}</td><td class="mono" data-label="Barcode">${esc(b.barcode)}</td>
+      <td data-label="Inhalt">${esc(b.content)}</td><td data-label="Boxfarbe">${sw(b.color_hex)}${esc(b.color)}</td>
+      <td data-label="Lagerart">${esc(b.box_type) || `<span class="muted">–</span>`}</td><td data-label="Abteile">${esc(b.compartments)}</td>
+      <td class="actions">${b.in_queue ? `<span class="inq" title="Steht schon in der Warteschlange der Box-Labels">Box-Label wartet</span>`
+        : `<button class="btn" onclick="requeue(${b.id})" title="Box-Label dieser Box in die Warteschlange (Reiter Box-Labels)">Box-Label</button>`}
+        <button class="btn" onclick="reprintBox(${b.id})" title="Bauteil-Label: im Reiter Bauteil-Labels zum Nachdruck auswählen">Bauteil-Label</button></td></tr>`).join("")
+    || `<tr><td colspan="7" class="muted">${anyFilter ? "Keine Box passt zum Filter." : "Keine Boxen in Part-DB gefunden."}</td></tr>`;
 }
-$("#f-filter").addEventListener("input", renderBoxes);
-async function requeue(id) { await call("POST", "/api/name-labels/queue", {ids: [id]}); loadBoxes(); loadNames(); }
+["#f-filter", "#f-fcontent", "#f-ftype"].forEach(s => $(s).addEventListener("input", renderBoxes));
+async function requeue(id) {
+  try {
+    await call("POST", "/api/name-labels/queue", {ids: [id]});
+    const b = BOXES.find(x => x.id === id);
+    msg("#m-boxes", `Box-Label ${b ? b.name + " " : ""}steht in der Warteschlange – im Reiter „Box-Labels“ drucken.`);
+  } catch (e) { msg("#m-boxes", e.message, false); }
+  loadBoxes(); loadNames();
+}
 
 // ---------- Stammdaten
 let MASTER = null, EDIT = null;   // EDIT = {kind: "color"|"cat"|"type", key: alter Schlüssel oder null (neu)}
@@ -966,7 +1249,26 @@ const KINDS = {
   type:  {url: "/api/stammdaten/lagerarten", tbody: "#t-types", keys: () => MASTER.lagerarten.map(t => t.name),
           label: k => `Lagerart „${k}“`},
 };
-const renderAll = () => { renderColors(); renderCats(); renderTypes(); };
+const renderAll = () => {
+  renderColors(); renderCats(); renderTypes();
+  $("#c-colors").textContent = MASTER.farben.length;
+  $("#c-cats").textContent = MASTER.kategorien.length;
+  $("#c-types").textContent = MASTER.lagerarten.length;
+  document.querySelectorAll("[data-mfilter]").forEach(filterMaster);
+};
+// Suche je Tabelle: Zeilen nur ausblenden (nicht weglassen) – askDelete findet Zeilen über ihre Position
+function filterMaster(input) {
+  const q = input.value.trim().toLowerCase();
+  [...$(KINDS[input.dataset.mfilter].tbody).children].forEach(tr => {
+    tr.hidden = !!q && tr.id !== "edit-row" && !tr.classList.contains("confirm") && !tr.textContent.toLowerCase().includes(q);
+  });
+}
+document.querySelectorAll("[data-mfilter]").forEach(i => i.addEventListener("input", () => filterMaster(i)));
+// Auf-/Zugeklappt merken (pro Browser)
+document.querySelectorAll("details[data-fold]").forEach(d => {
+  try { const v = localStorage.getItem("fold-" + d.id); if (v) d.open = v === "auf"; } catch (e) { /* privat */ }
+  d.addEventListener("toggle", () => { try { localStorage.setItem("fold-" + d.id, d.open ? "auf" : "zu"); } catch (e) { /* privat */ } });
+});
 async function loadMaster() {
   try { renderMaster(await call("GET", "/api/stammdaten")); }
   catch (e) { msg("#m-master", e.message, false); }
@@ -988,22 +1290,22 @@ const isEdit = (kind, key) => EDIT && EDIT.kind === kind && EDIT.key === key;
 const jsArg = v => esc(JSON.stringify(v));
 const actions = (kind, key) => `<td class="actions">
   <button class="btn" onclick="startEdit('${kind}', ${jsArg(key)})">Bearbeiten</button>
-  <button class="btn" onclick="askDelete('${kind}', ${jsArg(key)}, this)">Löschen</button></td>`;
+  <button class="btn del" onclick="askDelete('${kind}', ${jsArg(key)}, this)">Löschen</button></td>`;
 const editActions = kind => `<td class="actions">
   <button class="btn primary" onclick="saveEdit('${kind}')">Speichern</button>
   <button class="btn" onclick="cancelEdit()">Abbrechen</button></td>`;
 
 function renderColors() {
   const row = f => isEdit("color", f.name) ? colorEditRow(f) : `<tr>
-    <td>${sw(f.hex)}${esc(f.name)}</td><td class="mono muted">${esc(f.hex)}</td>
-    <td class="muted">${f.inhalte.length ? esc(f.inhalte.join(", ")) : "–"}</td>${actions("color", f.name)}</tr>`;
+    <td class="lead1">${sw(f.hex)}${esc(f.name)}</td><td class="mono muted" data-label="Hex">${esc(f.hex)}</td>
+    <td class="muted" data-label="Genutzt von">${f.inhalte.length ? esc(f.inhalte.join(", ")) : "–"}</td>${actions("color", f.name)}</tr>`;
   $("#t-colors").innerHTML = MASTER.farben.map(row).join("")
     + (isEdit("color", null) ? colorEditRow({name: "", hex: "#9a9a9a"}) : "");
 }
 function colorEditRow(f) {
   return `<tr id="edit-row">
-    <td><input id="e-cname" value="${esc(f.name)}" placeholder="z. B. Hellblau"></td>
-    <td><div class="hexedit"><input id="e-hex" type="color" value="${esc(f.hex)}"
+    <td data-label="Boxfarbe"><input id="e-cname" value="${esc(f.name)}" placeholder="z. B. Hellblau" aria-label="Name der Boxfarbe"></td>
+    <td data-label="Anzeige (Hex)"><div class="hexedit"><input id="e-hex" type="color" value="${esc(f.hex)}"
           oninput="$('#e-hextext').value = this.value">
         <input id="e-hextext" type="text" value="${esc(f.hex)}"
           oninput="if (/^#[0-9a-f]{6}$/i.test(this.value)) $('#e-hex').value = this.value"></div></td>
@@ -1011,37 +1313,38 @@ function colorEditRow(f) {
 }
 function renderCats() {
   const row = c => isEdit("cat", c.key) ? catEditRow(c) : `<tr>
-    <td class="mono">${esc(c.key)}</td><td>${esc(c.name)}</td><td>${sw(c.color_hex)}${esc(c.color)}</td>${actions("cat", c.key)}</tr>`;
+    <td class="mono lead1">${esc(c.key)}</td><td data-label="Name">${esc(c.name)}</td><td data-label="Boxfarbe">${sw(c.color_hex)}${esc(c.color)}</td>${actions("cat", c.key)}</tr>`;
   $("#t-cats").innerHTML = MASTER.kategorien.map(row).join("")
     + (isEdit("cat", null) ? catEditRow({key: "", name: "", color: ""}) : "");
 }
 function catEditRow(c) {
   return `<tr id="edit-row">
-    <td><input id="e-key" value="${esc(c.key)}" placeholder="z. B. M12"></td>
-    <td><input id="e-name" value="${esc(c.name)}" placeholder="Name"></td>
-    <td><select id="e-color">${c.color ? "" : `<option value="">– Boxfarbe wählen –</option>`}${MASTER.farben
+    <td data-label="Kürzel"><input id="e-key" value="${esc(c.key)}" placeholder="z. B. M12" aria-label="Kürzel"></td>
+    <td data-label="Name"><input id="e-name" value="${esc(c.name)}" placeholder="Name" aria-label="Name"></td>
+    <td data-label="Boxfarbe"><select id="e-color" aria-label="Boxfarbe">${c.color ? "" : `<option value="">– Boxfarbe wählen –</option>`}${MASTER.farben
       .map(f => `<option ${f.name === c.color ? "selected" : ""}>${esc(f.name)}</option>`).join("")}</select></td>${editActions("cat")}</tr>`;
 }
 function renderTypes() {
   const lbx = t => !t.lbx ? `<span class="muted">–</span>`
     : t.lbx_ok ? `<span class="mono">${esc(t.lbx)}</span>` : `<span class="mono">${esc(t.lbx)}</span> <span class="warn">fehlt</span>`;
   const row = t => isEdit("type", t.name) ? typeEditRow(t) : `<tr>
-    <td class="mono">${esc(t.name)}</td><td>${t.compartments}</td><td>${lbx(t)}</td>
-    <td class="mono">${t.file ? esc(t.file) : `<span class="muted">${esc(t.vorlage.file)}</span>`}</td>${actions("type", t.name)}</tr>`;
+    <td class="mono lead1">${esc(t.name)}</td><td data-label="Abteile">${t.compartments}</td><td data-label="P-touch-Vorlage">${lbx(t)}</td>
+    <td class="mono" data-label="CSV-Datei">${t.file ? esc(t.file) : `<span class="muted">${esc(t.vorlage.file)}</span>`}</td>${actions("type", t.name)}</tr>`;
   $("#t-types").innerHTML = MASTER.lagerarten.map(row).join("")
     + (isEdit("type", null) ? typeEditRow({name: "", compartments: 1, lbx: "", file: ""}) : "");
 }
 function typeEditRow(t) {
   return `<tr id="edit-row">
-    <td><input id="e-tname" value="${esc(t.name)}" placeholder="z. B. WinBin8"></td>
-    <td><input id="e-comp" type="number" min="1" max="99" value="${t.compartments}"></td>
-    <td><select id="e-lbx"><option value="">– keine –</option>${[...new Set([...MASTER.vorlagen, t.lbx].filter(Boolean))]
+    <td data-label="Name"><input id="e-tname" value="${esc(t.name)}" placeholder="z. B. WinBin8" aria-label="Name der Lagerart"></td>
+    <td data-label="Abteile"><input id="e-comp" type="number" min="1" max="99" value="${t.compartments}" aria-label="Abteile"></td>
+    <td data-label="P-touch-Vorlage"><select id="e-lbx" aria-label="P-touch-Vorlage"><option value="">– keine –</option>${[...new Set([...MASTER.vorlagen, t.lbx].filter(Boolean))]
       .map(f => `<option ${f === t.lbx ? "selected" : ""}>${esc(f)}</option>`).join("")}</select></td>
-    <td><input id="e-file" value="${esc(t.file)}" placeholder="Inhalt_${esc(t.name || "<Name>")}.csv"></td>${editActions("type")}</tr>`;
+    <td data-label="CSV-Datei"><input id="e-file" aria-label="CSV-Datei" value="${esc(t.file)}" placeholder="Inhalt_${esc(t.name || "<Name>")}.csv"></td>${editActions("type")}</tr>`;
 }
 function startEdit(kind, key) {
   EDIT = {kind, key}; renderAll();
   const row = $("#edit-row");
+  const fold = row.closest("details"); if (fold) fold.open = true;
   row.querySelector("input")?.focus();
   row.scrollIntoView({block: "nearest"});
   row.addEventListener("keydown", e => {
@@ -1161,7 +1464,7 @@ async function showPreview(id, url, body, opts = {}) {
   }
 }
 // Box-Label-Warteschlangen: Vorschau in aufklappender Zeile darunter
-const pvRowButton = (b, key, cols) => `<button class="btn" data-pv aria-expanded="false"
+const pvRowButton = (b, key, cols) => `<button class="btn sm" data-pv aria-expanded="false"
   onclick="toggleRowPreview(this, ${b.id}, '${key}', ${cols}, ${jsArg(b.name)})">Vorschau</button>`;
 function toggleRowPreview(btn, id, key, cols, name) {
   const tr = btn.closest("tr"), pid = `pv-${key}-${id}`;
@@ -1210,7 +1513,10 @@ async function loadTemplates(openDatei) {
     : "b-PAC nicht verfügbar – Vorschau als Skizze (Näherung, Druck kann leicht abweichen).";
   const keep = typeof openDatei === "string" ? openDatei : TW?.datei;
   closeWork();
-  const missing = (r.fehlende_dateien || []).map(f => `<div class="warn">Lagerart ${esc(f.lagerart)}: Vorlage <span class="mono">${esc(f.datei)}</span> fehlt im Vorlagenordner.</div>`).join("");
+  const lost = r.fehlende_dateien || [];
+  const missing = lost.length ? `<div class="alert" role="alert"><div><strong>${lost.length === 1 ? "Eine Vorlage fehlt" : lost.length + " Vorlagen fehlen"} im Vorlagenordner</strong>
+    ${lost.map(f => `<br>Lagerart ${esc(f.lagerart)}: <span class="mono">${esc(f.datei)}</span>`).join("")}
+    <div class="hint">Datei in den Vorlagenordner legen oder unter Stammdaten → Lagerarten eine andere Vorlage wählen.</div></div></div>` : "";
   $("#tpl-list").innerHTML = missing + (TPL.list.map((v, i) => `<div class="card" id="tc-${i}">${tplHead(v, i, false)}
     <div class="tplwork" id="tw-${i}" hidden></div></div>`).join("")
     || `<p class="muted">Keine Vorlagen (.lbx) im Vorlagenordner gefunden.</p>`);
@@ -1221,25 +1527,34 @@ $("#b-tpl-reload").onclick = () => loadTemplates();
 function renderTplSource() {
   const el = $("#tpl-source"); if (!el) return;
   const h = STATUS?.helfer, v = h?.vorlagen && typeof h.vorlagen === "object" ? h.vorlagen : null;
-  let text = "";
+  let text = "", alert = "";
   if (h?.modus === "helfer" && v) {
     if (v.ordner) text = `Quelle: Ordner ${v.ordner}${h.rechner ? " auf Rechner " + h.rechner : ""}`
       + (v.abgeglichen ? ` – abgeglichen ${fmtTime(v.abgeglichen)}` : "")
-      + (h.verbunden ? "" : " (Helfer gerade nicht verbunden)")
-      + (v.fehler ? ` – ⚠ ${v.fehler}` : "") + ". Vorlagen dort bzw. im P-touch Editor ändern.";
+      + (h.verbunden ? "" : " (Helfer gerade nicht verbunden)") + ". Vorlagen dort bzw. im P-touch Editor ändern.";
     else text = "Quelle: Vorlagen auf dem Server (im Helfer ist kein Vorlagen-Ordner eingestellt).";
     if (v.hinweis) text += ` Hinweis: ${v.hinweis}`;
+    // Abgleich-Fehler deutlich oben – mit Lösungshinweis statt grauer Fließtextzeile
+    if (v.fehler) alert = folderAlertHtml(v, h, "Die Liste unten zeigt den letzten Stand auf dem Server.");
   }
-  el.innerHTML = esc(text) + pendingDeletesHtml(h);
-  el.style.display = text ? "block" : "none";
+  el.innerHTML = alert + pendingDeletesHtml(h) + (text ? `<p class="muted" style="margin:0 0 4px">${esc(text)}</p>` : "");
+  el.style.display = alert || text || pendingDeletesHtml(h) ? "block" : "none";
+}
+// Warnbox für einen nicht lesbaren Vorlagen-Ordner am Helfer-PC (Reiter Vorlagen und Einstellungen)
+function folderAlertHtml(v, h, extra = "") {
+  const drive = /^[a-z]:[\\/]/i.test(v.ordner || "");
+  return `<div class="alert" role="alert"><div><strong>Vorlagen-Abgleich fehlgeschlagen</strong><br>${esc(v.fehler)}
+    <div class="hint">${drive ? "Netzlaufwerk-Buchstaben (z. B. Z:) sind für den Helfer evtl. nicht verbunden – " : ""}im Assistenten am Windows-PC
+      (Startmenü → „Druck-Helfer einrichten“) einen UNC-Pfad wie <span class="mono">\\\\Server\\Freigabe\\…</span> oder einen lokalen Ordner wählen.
+      ${esc(extra)}</div></div></div>`;
 }
 // Massen-Löschschutz: fehlen auf dem PC viele Vorlagen auf einmal, verschiebt der Server sie erst nach Bestätigung
 function pendingDeletesHtml(h) {
   const list = h?.vorlagen?.ausstehend;
   if (!Array.isArray(list) || !list.length) return "";
-  return `<div class="warn" style="margin-top:8px">${list.length} Vorlage(n) fehlen im PC-Ordner und wurden auf dem Server
+  return `<div class="alert" role="alert"><div><strong>${list.length} Vorlage(n) fehlen im PC-Ordner</strong> und wurden auf dem Server
     noch NICHT entfernt: ${esc(list.join(", "))}. Ist der Ordner richtig gewählt?
-    <button class="btn danger" style="margin-left:8px" onclick="confirmPendingDeletes()">Löschen bestätigen …</button></div>`;
+    <div class="row" style="margin-top:8px"><button class="btn danger sm" onclick="confirmPendingDeletes()">Löschen bestätigen …</button></div></div></div>`;
 }
 async function confirmPendingDeletes() {
   const list = STATUS?.helfer?.vorlagen?.ausstehend || [];
@@ -1257,15 +1572,16 @@ function tplHead(v, i, open) {
   const uses = [...(v.box_label ? [`<span class="chip">Box-Label</span>`] : []),
                 ...(v.lagerarten || []).map(t => `<span class="chip mono">${esc(t)}</span>`)];
   const len = v.laenge_mm ? ` × ${mm(v.laenge_mm)} mm` : " · Länge automatisch";
+  // Eine Zeile: Name · Band × Länge · genutzt von; darunter die Felder dezent
   return `<div class="tplhead">
     <div class="tplinfo">
-      <h3><span class="mono">${esc(v.datei)}</span> <span class="chip band">${v.band_mm ? mm(v.band_mm) + " mm" : "Band ?"}${len}</span></h3>
-      <div class="chips"><span class="muted">Genutzt von:</span>${uses.join("") || `<span class="muted">– nicht zugeordnet</span>`}</div>
-      <div class="chips"><span class="muted">Felder:</span>${(v.felder || []).map(f => `<span class="chip mono">${esc(f)}</span>`).join("")
-        || `<span class="muted">– keine Datenbankfelder</span>`}</div>
+      <h3><span class="mono">${esc(v.datei)}</span> <span class="chip band">${v.band_mm ? mm(v.band_mm) + " mm" : "Band ?"}${len}</span>
+        <span class="uses"><span class="muted">genutzt von</span>${uses.join("") || `<span class="muted">– nicht zugeordnet</span>`}</span></h3>
+      <div class="chips fields"><span class="muted" style="font-size:11.5px">Felder:</span>${(v.felder || []).map(f => `<span class="chip mono field">${esc(f)}</span>`).join("")
+        || `<span class="muted" style="font-size:11.5px">keine Datenbankfelder</span>`}</div>
       ${(v.warnungen || []).map(w => `<div class="warn">${esc(w)}</div>`).join("")}
     </div>
-    <button class="btn${open ? " primary" : ""}" aria-expanded="${open}" aria-controls="tw-${i}"
+    <button class="btn sm${open ? " primary" : ""}" aria-expanded="${open}" aria-controls="tw-${i}"
       onclick="toggleWork(${jsArg(v.datei)})">${open ? "Schließen" : "Vorschau &amp; Bearbeiten"}</button>
   </div>`;
 }
@@ -1559,15 +1875,42 @@ function renderSettings() {
   const dpiNames = {180: "Niedrig (180 dpi, wie der Drucker)", 360: "Standard (360 dpi)", 600: "Hoch (600 dpi)", 720: "Sehr hoch (720 dpi)"};
   $("#s-dpi").innerHTML = (d.vorschau_dpi_optionen || [360]).map(v =>
     `<option value="${v}"${v === d.vorschau_dpi ? " selected" : ""}>${esc(dpiNames[v] || v + " dpi")}</option>`).join("");
+  renderCuts(new Set(d.schnitt || []));
+  renderHelperInfo();
+}
+// Schnittoptionen je Modell (wie CUT_SUPPORT in bpac.py): diese Geräte können nur Autocut und Kettendruck
+const CUT_MODELS = [{models: ["PT-2430PC", "PT-2730", "PT-P700", "PT-P710BT", "PT-P715EBT", "PT-H500", "PT-E500", "PT-D600",
+                              "PT-D610BT", "PT-E720BT"], cuts: ["autocut", "chainprint"]}];
+const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function cutModel() {
+  const names = [STATUS?.drucker?.name, STATUS?.helfer?.drucker_modell, SET?.druck?.drucker].filter(Boolean);
+  for (const name of names) {
+    const up = String(name).toUpperCase();
+    for (const g of CUT_MODELS) {
+      const m = g.models.find(m => new RegExp(`(?<![A-Z0-9-])${reEsc(m)}(?![A-Z0-9])`).test(up));
+      if (m) return {model: m, cuts: new Set(g.cuts)};
+    }
+  }
+  return null;   // unbekannt -> alle Optionen zeigen
+}
+let CUT_SIG = "";
+// sel: gewählte Optionen (Standard: aktuelle Haken, damit ein Status-Update nichts Ungespeichertes verwirft)
+function renderCuts(sel) {
+  if (!SET) return;
+  const d = SET.druck || {};
+  sel ??= new Set([...$("#s-cuts").querySelectorAll("input:checked")].map(x => x.value));
+  const known = cutModel();
+  CUT_SIG = known ? known.model : "";
   const opts = d.schnitt_optionen?.length ? d.schnitt_optionen : Object.keys(CUT_LABELS);
-  const sel = new Set(d.schnitt || []);
   $("#s-cuts").innerHTML = opts.map((o, i) => {
     const v = typeof o === "string" ? o : (o.wert ?? o.name ?? o.key ?? "");
     const text = typeof o === "string" ? (CUT_LABELS[o] || o) : (o.text ?? o.label ?? CUT_LABELS[v] ?? v);
+    const fits = !known || known.cuts.has(v);
+    if (!fits && !sel.has(v)) return "";   // passt nicht zum Drucker und ist nicht gewählt -> weglassen
     return `<label class="check"><input type="checkbox" id="s-cut-${i}" value="${esc(v)}"${sel.has(v) ? " checked" : ""}>
-      ${esc(text)} <span class="muted mono">${esc(v)}</span></label>`;
+      ${esc(text)} <span class="muted mono">${esc(v)}</span>${fits ? "" : ` <span class="ign">– wird bei ${esc(known.model)} ignoriert</span>`}</label>`;
   }).join("");
-  renderHelperInfo();
+  $("#s-cuts-model").textContent = known ? `– passend zu ${known.model}` : "";
 }
 function modeHint() {
   $("#s-mode-hint").textContent = $("#s-mode").value === "helfer"
@@ -1664,7 +2007,6 @@ function renderHelperInfo() {
     if (v) {
       rows.push(["Vorlagen-Ordner", v.ordner ? `${v.ordner}${h.rechner ? " (auf " + h.rechner + ")" : ""}` : "nicht eingestellt – Server-Vorlagen werden genutzt"]);
       if (v.ordner) rows.push(["Vorlagen", `${v.anzahl ?? "?"} Datei(en)`], ["Letzter Abgleich", v.abgeglichen ? fmtTime(v.abgeglichen) : "noch keiner"]);
-      if (v.fehler) rows.push(["Abgleich-Fehler", "⚠ " + v.fehler]);
       if (v.hinweis) rows.push(["Hinweis", v.hinweis]);
       if (Array.isArray(v.ausstehend) && v.ausstehend.length)
         rows.push(["Ausstehende Löschungen", `${v.ausstehend.length} – im Reiter Vorlagen bestätigen`]);
@@ -1672,8 +2014,22 @@ function renderHelperInfo() {
   }
   rows.push(["Helfer-Token", ht.token_gesetzt ? (ht.token_hinweis || "gesetzt") : "noch keiner – wird beim Herunterladen des Helfers erzeugt"]);
   $("#s-helper-info").innerHTML = rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
+  // Probleme als Warnbox oben im Helfer-Bereich
+  const v = h?.vorlagen && typeof h.vorlagen === "object" ? h.vorlagen : null;
+  const alerts = [];
+  if (STATUS && mode === "helfer" && !h?.verbunden)
+    alerts.push(`<div class="alert" role="alert"><div><strong>Druck-Helfer nicht verbunden</strong><br>Am Windows-PC den Helfer starten
+      (Startmenü → „Labeltool Druck-Helfer“ bzw. <span class="mono">helfer.bat</span>). Noch nicht installiert? Anleitung unten.</div></div>`);
+  if (mode === "helfer" && h?.verbunden && v?.fehler) alerts.push(folderAlertHtml(v, h));
+  $("#s-helper-alert").innerHTML = alerts.join("");
+  // Anleitung: zu, wenn kein Helfer gebraucht wird oder er verbunden ist; nur einmal setzen (Nutzer darf umschalten)
+  if (STATUS && !INST_FOLD_SET) {
+    INST_FOLD_SET = true;
+    $("#s-inst-fold").open = mode === "helfer" && !h?.verbunden;
+  }
   renderUpdate();
 }
+let INST_FOLD_SET = false;
 
 // ---------- Helfer-Update per Knopf: der Server schickt dem Helfer den Auftrag, danach warten wir auf die
 // Neuverbindung mit der neuen Version (Status alle 3 s). UPD = laufendes Update (nur in diesem Browser-Tab).
