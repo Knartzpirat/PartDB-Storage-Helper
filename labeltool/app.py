@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from . import bpac, helfer_server, routes_einstellungen, routes_helfer_download, vorlagen
 from .config import BoxType, Category, Config
 from .labels import (NAME_COLUMNS, build_content_labels, content_label_for_box, export_content_labels,
-                     has_tag, make_content_label, name_label_rows, parts_by_location, remove_tag,
+                     has_tag, join_unique, make_content_label, name_label_rows, parts_by_location, remove_tag,
                      search_boxes, write_csv)
 from .model import Box, build_comment, make_name, next_number, parse_box
 from .partdb import PartDB, PartDBError, ref_id
@@ -517,9 +517,11 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
             "box": l.box.to_dict(),
             "vorlage": l.template_file,
             "felder": l.slots,
-            "slots": [None if p is None else {"name": p.name, "footprint": p.footprint,
-                                               "fach": p.compartment, "tag": p.tagged}
-                      for p in l.ordered_slots()],
+            "slots": [None if not g else {
+                          "name": cfg.part_separator.join(p.name for p in g),
+                          "footprint": join_unique((p.footprint for p in g), cfg.part_separator),
+                          "fach": g[0].compartment, "tag": any(p.tagged for p in g), "anzahl": len(g)}
+                      for g in l.ordered_slots()],
             "row": l.row(cfg),
             "warnungen": l.warnings,
         }

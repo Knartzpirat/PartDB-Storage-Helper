@@ -60,6 +60,7 @@ class Config:
     colors: dict[str, str]  # Boxfarben: Name -> Hex, z. B. "Hellblau" -> "#8ecae6"
     default_content_slots: int
     content_category_source: str   # "part" (Kategorie der Bauteile) oder "box" (Lagerinhalt)
+    part_separator: str            # trennt mehrere Bauteile/Footprints/Kategorien in einem Feld
     compartment_regex: str
     state_file: Path
     master_file: Path
@@ -158,6 +159,7 @@ def load_config(path: str | Path) -> Config:
         colors=parse_colors(raw.get("farben"), cats),
         default_content_slots=int(lab.get("standard_felder", 6)),
         content_category_source=str(lab.get("kategorie_quelle", "part")),
+        part_separator=str(lab.get("trenner", " | ")),
         compartment_regex=str(lab.get("fach_regex", r"(?i)^\s*(?:fach|f)\s*[-:#]?\s*(\d+)")),
         state_file=base / str(raw.get("status_datei", "status.json")),
         master_file=base / str(raw.get("stammdaten_datei", "stammdaten.yaml")),

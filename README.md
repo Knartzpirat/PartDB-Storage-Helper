@@ -241,12 +241,17 @@ nachdrucken.
 Drucken (direkt oder über *CSVs schreiben* → *In P-touch öffnen*), dann *Gedruckt – Tags entfernen*. Entfernt wird der
 Tag nur bei den Teilen, die tatsächlich gedruckt wurden.
 
-**Fächer:** Damit ein Teil in einem bestimmten Feld landet, in der **Beschreibung des Bestands (Part-Lot)** `Fach 3`
-oder `F3` eintragen. Teile ohne Fach füllen die freien Felder alphabetisch auf. Die Oberfläche warnt bei zu vielen
-Teilen oder doppelt belegten Fächern.
+**Fächer:** Damit ein Teil in einem bestimmten Feld landet, in Part-DB beim Bauteil unter *Bearbeiten →
+Lagerbestände* in der **Beschreibung des Bestands** dieser Box die Fachnummer eintragen: nur die Zahl (`3`) oder
+`Fach 3` / `F3` (auch mit weiterem Text dahinter, z. B. `Fach 3 – oben`). Ersatzweise wird der Kommentar des
+Bestands gelesen. Text wie `3 Rollen` oder `100 Stück` zählt nicht als Fach. Teile ohne Fach füllen die freien
+Felder in der Reihenfolge, in der sie angelegt wurden.
 
-**Inhalt eines Bauteil-Labels:** `Location` = Boxname, `Category` = häufigste Part-DB-Kategorie der Bauteile
+**Inhalt eines Bauteil-Labels:** `Location` = Boxname, `Category` = Part-DB-Kategorien der Bauteile
 (oder der Inhalt der Box, `kategorie_quelle: box`), `Section1…n` = Bauteilname, `Footprint1…n` = Footprint.
+Passen nicht alle Bauteile in eigene Felder (mehr Bauteile als Abteile oder mehrere im selben Fach), werden sie
+im Feld mit ` | ` getrennt zusammengefasst – es fällt keins weg. Gleiches gilt für Footprints und Kategorien
+(z. B. `Wellenkupplung | GT-Riemen`). Das Trennzeichen legt `labels.trenner` fest.
 
 ## Stammdaten
 
@@ -321,7 +326,8 @@ Die meisten Einstellungen sind in der Oberfläche erreichbar und landen in `eins
 | `output.ordner`, `output.encoding`, `output.trennzeichen` | CSV-Ausgabe; erscheinen Umlaute im P-touch Editor falsch, `encoding: cp1252` |
 | `labels.tag` | Part-DB-Tag für „braucht Bauteil-Label“ (Standard `noLabel`) |
 | `labels.vorlagen_ordner`, `labels.box_vorlage` | Ordner der `.lbx`-Vorlagen und Vorlage des Box-Labels |
-| `labels.kategorie_quelle` | `part` = häufigste Bauteil-Kategorie, `box` = Inhalt der Box |
+| `labels.kategorie_quelle` | `part` = Kategorien der Bauteile, `box` = Inhalt der Box |
+| `labels.trenner` | trennt mehrere Bauteile, Footprints und Kategorien in einem Feld (Standard ` \| `) |
 | `labels.fach_regex` | Muster für die Fachnummer in der Bestandsbeschreibung |
 | `labels.standard_felder` | Felder für Boxen ohne bekannte Lagerart |
 | `druck.modus` | `lokal` (alles auf einem Windows-PC) oder `helfer` (Docker + Druck-Helfer) |

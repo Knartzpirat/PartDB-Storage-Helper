@@ -17,8 +17,10 @@ labels:
   tag: "noLabel"                          # Part-DB-Tag für "braucht Inhaltslabel"
   namenslabel_datei: "Namenslabels.csv"   # CSV für die 24-mm-Box-Label-Vorlage
   standard_felder: 6                      # Felder für Boxen ohne bekannte Lagerart
-  kategorie_quelle: "part"                # "part" = häufigste Bauteil-Kategorie, "box" = Lagerinhalt
-  # Fachnummer aus der Beschreibung des Part-Lots, z. B. "Fach 3" oder "F3"
+  kategorie_quelle: "part"                # "part" = Kategorien der Bauteile (mit trenner), "box" = Lagerinhalt
+  trenner: " | "                          # mehrere Bauteile/Footprints/Kategorien in einem Feld
+  # Fachnummer aus der Beschreibung des Part-Lots, z. B. "Fach 3", "F3" – oder nur "3"
+  # (eine Beschreibung, die nur aus der Zahl besteht, zählt immer als Fach)
   fach_regex: '(?i)^\s*(?:fach|f)\s*[-:#]?\s*(\d+)'
 
   # P-touch-Vorlagen (.lbx). Das Tool öffnet eine Kopie, die schon mit der CSV verknüpft ist.

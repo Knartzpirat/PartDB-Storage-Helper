@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import csv
 import re
-from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -73,39 +72,59 @@ class ContentLabel:
 
     def row(self, cfg: Config) -> dict:
         ordered = self.ordered_slots()
+        sep = cfg.part_separator
         if cfg.content_category_source == "box":
             category = self.box.content
-        else:
-            cats = Counter(p.category for p in self.parts if p.category)
-            category = cats.most_common(1)[0][0] if cats else self.box.content
+        else:   # alle Kategorien der Box, in Reihenfolge der Felder: "Wellenkupplung | GT-Riemen"
+            category = join_unique((p.category for group in ordered for p in group), sep) or self.box.content
         row = {"Location": self.box.name, "Category": category}
-        for i, p in enumerate(ordered, start=1):
-            row[f"Section{i}"] = p.name if p else ""
-            row[f"Footprint{i}"] = p.footprint if p else ""
+        for i, group in enumerate(ordered, start=1):
+            row[f"Section{i}"] = sep.join(p.name for p in group)
+            row[f"Footprint{i}"] = join_unique((p.footprint for p in group), sep)
         row.update({"Barcode": self.box.barcode, "Lagerfarbe": self.box.color,
                     "Lagerinhalt": self.box.content})
         return row
 
-    def ordered_slots(self) -> list[PartEntry | None]:
-        """Bauteile mit Fachnummer kommen in ihr Fach, der Rest füllt freie Felder."""
-        slots: list[PartEntry | None] = [None] * self.slots
+    def ordered_slots(self) -> list[list[PartEntry]]:
+        """Bauteile je Feld. Mit Fachnummer ins eigene Fach (mehrere werden zusammengefasst),
+        der Rest verteilt sich in zusammenhängenden Gruppen auf die freien Felder – es fällt
+        kein Bauteil weg. Gibt es kein freies Feld mehr, kommt der Rest ins Feld mit den wenigsten."""
+        slots: list[list[PartEntry]] = [[] for _ in range(max(self.slots, 1))]
         rest: list[PartEntry] = []
-        for p in sorted(self.parts, key=lambda x: (x.compartment or 10**6, x.name.lower())):
-            if p.compartment and 1 <= p.compartment <= self.slots and slots[p.compartment - 1] is None:
-                slots[p.compartment - 1] = p
+        # Reihenfolge wie in Part-DB angelegt (ID), damit nachgedruckte Labels gleich aussehen
+        for p in sorted(self.parts, key=lambda x: (x.compartment or 10**6, x.part_id)):
+            if p.compartment and 1 <= p.compartment <= len(slots):
+                slots[p.compartment - 1].append(p)
             else:
                 rest.append(p)
-        for p in rest:
-            try:
-                slots[slots.index(None)] = p
-            except ValueError:
-                break
-        return slots
+        free = [i for i, s in enumerate(slots) if not s]
+        if free:
+            # z. B. 5 Teile auf 2 freie Felder -> 3 + 2, Reihenfolge bleibt erhalten
+            size, extra = divmod(len(rest), len(free))
+            start = 0
+            for n, i in enumerate(free):
+                end = start + size + (1 if n < extra else 0)
+                slots[i].extend(rest[start:end])
+                start = end
+        elif rest:
+            min(slots, key=len).extend(rest)
+        return slots[:self.slots]
+
+
+def join_unique(values, sep: str) -> str:
+    """Nicht-leere Werte ohne Doppelungen, Reihenfolge des ersten Auftretens."""
+    return sep.join(dict.fromkeys(v for v in values if v))
+
+
+_ONLY_NUMBER = re.compile(r"\s*(\d{1,3})\s*")   # Beschreibung besteht nur aus der Fachnummer, z. B. "3"
 
 
 def compartment_of(lot: dict, regex: str) -> int | None:
+    """Fachnummer aus Beschreibung bzw. Kommentar des Bestands: "Fach 3", "F3" (fach_regex) oder
+    nur "3". "3 Rollen" oder "100 Stück" zählen nicht – dort ist die Zahl eine Menge, kein Fach."""
     for field_name in ("description", "comment"):
-        m = re.search(regex, str(lot.get(field_name) or ""))
+        text = str(lot.get(field_name) or "")
+        m = re.search(regex, text) or _ONLY_NUMBER.fullmatch(text)
         if m:
             return int(m.group(1))
     return None
@@ -162,12 +181,10 @@ def make_content_label(cfg: Config, box: Box, parts: list[PartEntry]) -> Content
     label = ContentLabel(box=box, template_file=tpl.file, slots=tpl.slots, parts=parts)
     if not box.box_type:
         label.warnings.append("Keine Lagerart hinterlegt – Standardvorlage wird genutzt.")
-    if len(label.parts) > tpl.slots:
-        label.warnings.append(f"{len(label.parts)} Bauteile, aber nur {tpl.slots} Felder – Rest fehlt auf dem Label.")
-    comps = Counter(p.compartment for p in label.parts if p.compartment)
-    dup = [str(c) for c, n in comps.items() if n > 1]
-    if dup:
-        label.warnings.append(f"Mehrere Bauteile im selben Fach: {', '.join(dup)}")
+    crowded = [i for i, g in enumerate(label.ordered_slots(), start=1) if len(g) > 1]
+    if crowded:   # kein Fehler – nur Hinweis, dass die Schrift auf dem Label kleiner werden kann
+        label.warnings.append(f"{len(label.parts)} Bauteile auf {tpl.slots} Feld(er): "
+                              f"Feld {', '.join(map(str, crowded))} mit „{cfg.part_separator.strip()}“ zusammengefasst.")
     return label
 
 
