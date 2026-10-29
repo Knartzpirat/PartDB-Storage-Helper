@@ -618,7 +618,7 @@
       <h2>Sicherheit <span class="muted">Helfer-Token</span></h2>
       <p class="muted lead">Der Token verbindet den Druck-Helfer mit diesem Server. Neu erzeugen, wenn er weitergegeben wurde – der verbundene Helfer wird dann getrennt.</p>
       <div class="row" style="margin-top:0">
-        <button type="button" class="btn" id="s-newtoken">Helfer-Token neu erzeugen …</button>
+        <button type="button" class="btn" id="s-newtoken">Helfer-Token neu erzeugen</button>
       </div>
       <div class="secret" id="s-secret" hidden>
         <strong>Neuer Helfer-Token</strong>
@@ -1064,7 +1064,7 @@ function showPrintCheck(art, labels, kopien, msgId) {
   $("#pk-ok").onclick = async () => {
     // Der Knopf „Alle da …“ ist selbst die Bestätigung – keine zweite Rückfrage
     closePrintCheck();
-    if (art === "bauteile") { await contentDone(false); return; }
+    if (art === "bauteile") { await contentDone(); return; }
     if (art !== "box") return;
     try { const r = await call("POST", "/api/name-labels/done"); msg(msgId, `${r.erledigt} Box(en) als beschriftet markiert.`); loadNames(); }
     catch (e) { msg(msgId, e.message, false); }
@@ -1141,9 +1141,10 @@ async function loadNames() {
   } catch (e) { msg("#m-names", e.message, false); }
 }
 async function unqueue(id, name) {
-  if (!confirm(`${name} aus der Warteschlange der Box-Labels nehmen?\n\nDie Box bleibt in Part-DB, es wird nur kein Box-Label gedruckt. `
-             + `Zurückholen: „Alle Boxen“ > „Box-Label“.`)) return;
-  try { await call("DELETE", "/api/name-labels/queue/" + id); } catch (e) { msg(namesMsg(), e.message, false); }
+  try {
+    await call("DELETE", "/api/name-labels/queue/" + id);
+    msg(namesMsg(), `${name} aus der Warteschlange genommen – die Box bleibt in Part-DB. Zurückholen: „Alle Boxen“ > „Box-Label“.`);
+  } catch (e) { msg(namesMsg(), e.message, false); }
   loadNames();
 }
 // Box-Labels: gleiche Knöpfe in "Neue Box" und im Reiter Box-Labels
@@ -1237,17 +1238,14 @@ $("#b-content-direct").onclick = async () => {
   b.disabled = directDisabled(b);
 };
 $("#b-content-done").onclick = () => contentDone();
-// „Gedruckt – Tags entfernen“ – auch aus der Druckkontrolle („Alle da“). -> true, wenn ausgeführt
-async function contentDone(ask = true) {
-  if (ask && !confirm(`Alle Labels sauber gedruckt?\n\nTag "${META.tag}" wird bei den gedruckten Bauteilen in Part-DB entfernt `
-             + `und gedruckte Nachdrucke kommen aus der Liste.`)) return false;
+// „Gedruckt – Tags entfernen“ – auch aus der Druckkontrolle („Alle da“)
+async function contentDone() {
   try {
     const r = await call("POST", "/api/content-labels/done");
     msg("#m-content", `Tag bei ${r.entfernt} Bauteilen entfernt.` + (r.nachdruck_erledigt ? ` ${r.nachdruck_erledigt} Nachdruck(e) erledigt.` : "") + (r.fehler.length ? `\nFehler: ${r.fehler.map(f => f.id + ": " + f.fehler).join("\n")}` : ""), !r.fehler.length);
     $("#b-content-done").disabled = !r.fehler.length;
     loadContent();
   } catch (e) { msg("#m-content", e.message, false); }
-  return true;
 }
 
 // Automatischer CSV-Download nach dem Schreiben (abschaltbar, gespeichert pro Browser)
@@ -1356,9 +1354,10 @@ async function addToList() {
   updateReprintCount();
 }
 async function unlistReprint(id, name, getaggt) {
-  if (!confirm(`${name} aus der Druckliste nehmen?` + (getaggt
-    ? `\n\nDie Box bleibt trotzdem in der Liste, weil Bauteile darin den Tag „${META.tag}“ haben.` : ""))) return;
-  try { await call("DELETE", `/api/content-labels/liste/${id}`); } catch (e) { msg("#m-content", e.message, false); }
+  try {
+    await call("DELETE", `/api/content-labels/liste/${id}`);
+    msg("#m-content", `${name} als Nachdruck entfernt.` + (getaggt ? ` Die Box bleibt in der Liste, weil Bauteile darin den Tag „${META.tag}“ haben.` : ""));
+  } catch (e) { msg("#m-content", e.message, false); }
   loadContent();
 }
 $("#f-reprint").addEventListener("input", () => reprintSearch());
@@ -1520,7 +1519,7 @@ const isEdit = (kind, key) => EDIT && EDIT.kind === kind && EDIT.key === key;
 const jsArg = v => esc(JSON.stringify(v));
 const actions = (kind, key) => `<td class="actions">
   <button class="btn" onclick="startEdit('${kind}', ${jsArg(key)})">Bearbeiten</button>
-  <button class="btn del" onclick="askDelete('${kind}', ${jsArg(key)}, this)">Löschen</button></td>`;
+  <button class="btn del" onclick="deleteMaster('${kind}', ${jsArg(key)})">Löschen</button></td>`;
 const editActions = kind => `<td class="actions">
   <button class="btn primary" onclick="saveEdit('${kind}')">Speichern</button>
   <button class="btn" onclick="cancelEdit()">Abbrechen</button></td>`;
@@ -1598,11 +1597,11 @@ async function saveEdit(kind) {
   }[kind]();
   const newKey = kind === "cat" ? body.key : body.name;
   const used = isNew ? 0 : usedBy(kind, key).length;
-  if (used && newKey !== key && !confirm(`"${key}" in "${newKey}" umbenennen?\n\n${used} bestehende Box(en) in Part-DB nutzen noch "${key}" und werden nicht umbenannt.`)) return;
   try {
     const data = await call(isNew ? "POST" : "PUT", isNew ? base : `${base}/${encodeURIComponent(key)}`, body);
     EDIT = null; renderMaster(data);
-    msg("#m-master", data.rueckgaengig);
+    msg("#m-master", data.rueckgaengig + (used && newKey !== key
+      ? ` – ${used} bestehende Box(en) in Part-DB nutzen noch "${key}" und wurden nicht umbenannt.` : ""));
   } catch (e) { msg("#m-master", e.message, false); }
 }
 
@@ -1611,29 +1610,17 @@ function usedBy(kind, key) {
   return BOXES.filter(b => kind === "cat" ? b.abbr === key
     : kind === "color" ? colorKey(b.color) === colorKey(key) : b.box_type === key);
 }
-// Löschen: 1. Nachfrage in der Zeile, 2. Nachfrage als Dialog, danach Rückgängig möglich
-function askDelete(kind, key, btn) {
-  EDIT = null; renderAll();
-  const k = KINDS[kind];
-  const tr = $(k.tbody).children[k.keys().indexOf(key)];
-  const label = k.label(key);
-  tr.classList.add("confirm");
-  tr.querySelector("td.actions").innerHTML = `<span>Wirklich löschen?</span>
-    <button class="btn danger" onclick="confirmDelete('${kind}', ${jsArg(key)}, ${jsArg(label)})">Ja, löschen</button>
-    <button class="btn" onclick="cancelEdit()">Nein</button>`;
-}
-async function confirmDelete(kind, key, label) {
+// Löschen ohne Rückfrage – die Stammdaten liegen nur im Tool, „Rückgängig“ stellt sie wieder her
+async function deleteMaster(kind, key) {
   const used = usedBy(kind, key).length;
-  const warn = used ? `\n\nAchtung: ${used} Box(en) in Part-DB nutzen das noch. Die Boxen bleiben bestehen, verlieren im Tool aber die Zuordnung.` : "";
-  if (!confirm(`${label} endgültig löschen?${warn}\n\nDas lässt sich danach mit „Rückgängig“ wiederherstellen.`)) { cancelEdit(); return; }
   try {
     const data = await call("DELETE", `${KINDS[kind].url}/${encodeURIComponent(key)}`);
     EDIT = null; renderMaster(data);
-    msg("#m-master", `${data.rueckgaengig} – mit „Rückgängig“ oben wiederherstellbar.`);
+    msg("#m-master", `${data.rueckgaengig} – mit „Rückgängig“ oben wiederherstellbar.`
+      + (used ? ` ${used} Box(en) in Part-DB nutzen das noch; sie bleiben bestehen, verlieren im Tool aber die Zuordnung.` : ""));
   } catch (e) { msg("#m-master", e.message, false); }
 }
 $("#b-undo").onclick = async () => {
-  if (!confirm(`Rückgängig machen: ${$("#undo-text").textContent}?`)) return;
   try {
     const data = await call("POST", "/api/stammdaten/undo");
     EDIT = null; renderMaster(data);
@@ -1785,13 +1772,10 @@ function pendingDeletesHtml(h) {
   if (!Array.isArray(list) || !list.length) return "";
   return `<div class="alert" role="alert"><div><strong>${list.length} Vorlage(n) fehlen im PC-Ordner</strong> und wurden auf dem Server
     noch NICHT entfernt: ${esc(list.join(", "))}. Ist der Ordner richtig gewählt?
-    <div class="row" style="margin-top:8px"><button class="btn danger sm" onclick="confirmPendingDeletes()">Löschen bestätigen …</button></div></div></div>`;
+    <div class="row" style="margin-top:8px"><button class="btn danger sm" onclick="confirmPendingDeletes()">Auch auf dem Server entfernen</button></div></div></div>`;
 }
 async function confirmPendingDeletes() {
   const list = STATUS?.helfer?.vorlagen?.ausstehend || [];
-  if (!confirm(`${list.length} Vorlage(n) auf dem Server entfernen?\n\n${list.join("\n")}`)) return;
-  if (!confirm("Wirklich? Die Dateien werden auf dem Server nach „.geloescht“ verschoben "
-               + "(dort wiederherstellbar). Auf dem PC sind sie bereits weg.")) return;
   try {
     const r = await call("POST", "/api/helfer/vorlagen/loeschen-bestaetigen");
     msg("#m-tpl", `${r.bestaetigt.length} Vorlage(n) entfernt – liegen auf dem Server unter .geloescht.`);
@@ -2203,7 +2187,7 @@ async function savePartdb(ohneTest) {
 }
 $("#set-partdb").onsubmit = e => { e.preventDefault(); savePartdb(false); };
 $("#s-pd-force").onclick = () => {
-  if (confirm("Ohne erfolgreichen Verbindungstest speichern?\n\nDanach funktionieren Part-DB-Funktionen erst, wenn URL und Token stimmen.")) savePartdb(true);
+  savePartdb(true);
 };
 $("#set-druck").onsubmit = async e => {
   e.preventDefault();
@@ -2287,17 +2271,10 @@ function renderUpdate() {
 $("#s-upd-btn").onclick = async () => {
   const h = STATUS?.helfer, u = h?.update;
   if (!h?.verbunden || !u?.moeglich || UPD || updSending) return;
-  const current = !u.verfuegbar && !!u.angeboten && !!u.installiert;
-  const text = (current
-      ? `Der Druck-Helfer${h.rechner ? " auf " + h.rechner : ""} ist bereits aktuell (${u.installiert}).\nTrotzdem neu installieren?`
-      : `Druck-Helfer${h.rechner ? " auf " + h.rechner : ""} aktualisieren`
-        + (u.angeboten ? `: ${u.installiert || "?"} → ${u.angeboten}?` : "? (Version des Setups unbekannt)"))
-    + "\n\nDer Helfer lädt das Setup vom Server und startet es. Am Windows-PC erscheint die Windows-"
-    + "Administratorabfrage (Benutzerkontensteuerung) – dort mit „Ja“ bestätigen.\n"
-    + "Während des Updates (etwa eine Minute) sind Drucken und Vorschau über den Helfer nicht möglich.";
-  if (!confirm(text)) return;
+  const current = !u.verfuegbar && !!u.angeboten && !!u.installiert;   // gleiche Version: neu installieren
   updSending = true; renderUpdate();
-  updMsg("Setup wird an den Helfer übertragen … Am Windows-PC die Administratorabfrage mit „Ja“ bestätigen.", "busy");
+  updMsg("Setup wird an den Helfer übertragen … Am Windows-PC die Administratorabfrage mit „Ja“ bestätigen. "
+         + "Während des Updates (etwa eine Minute) sind Drucken und Vorschau über den Helfer nicht möglich.", "busy");
   try {
     const r = await call("POST", "/api/helfer/aktualisieren", {erzwingen: current});
     UPD = {ziel: r.version || null, von: r.von || u.installiert || null, seit: h.seit, start: Date.now()};
@@ -2344,12 +2321,6 @@ function helperYaml(token) {
   ].join("\n");
 }
 $("#s-newtoken").onclick = async () => {
-  const h = STATUS?.helfer, connected = h?.modus === "helfer" && h.verbunden;
-  const text = "Neuen Helfer-Token erzeugen?\n\n"
-    + (SET?.helfer?.token_gesetzt ? "Der bisherige Token wird sofort ungültig" : "Es wird ein Token erzeugt")
-    + (connected ? ` – der verbundene Helfer${h.rechner ? " (" + h.rechner + ")" : ""} wird getrennt` : "")
-    + ".\nDanach den neuen Token in helfer.yaml am Windows-PC eintragen und den Helfer neu starten.";
-  if (!confirm(text)) return;
   const b = $("#s-newtoken"); b.disabled = true;
   try {
     const r = await call("POST", "/api/einstellungen/helfer/token");
