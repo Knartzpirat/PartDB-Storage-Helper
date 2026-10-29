@@ -122,3 +122,16 @@ def test_geloeschte_box_verschwindet_aus_der_liste(tmp_path):
     c.post("/api/content-labels/liste", json={"ids": [box["id"]]})
     assert c.post("/api/boxes/loeschen", json={"ids": [box["id"]]}).json()["geloescht"]
     assert box["id"] not in [l["box"]["id"] for l in c.get("/api/content-labels").json()]
+
+
+def test_offener_druck_nach_neuladen(tmp_path):
+    _, fake, cfg = make(tmp_path)
+    cfg.direct_print = True
+    c = TestClient(create_app(cfg, transport=httpx.MockTransport(fake), opener=lambda p: None, printer=FakePrinter()))
+    assert c.get("/api/content-labels/offen").json() == {"bauteile": 0, "nachdruck": 0}
+    c.post("/api/content-labels/print")
+    # neue App-Instanz = Seite/Server neu geladen: der offene Druck ist noch bekannt
+    c = TestClient(create_app(cfg, transport=httpx.MockTransport(fake), opener=lambda p: None, printer=FakePrinter()))
+    assert c.get("/api/content-labels/offen").json() == {"bauteile": 1, "nachdruck": 0}
+    assert c.post("/api/content-labels/done").json()["entfernt"] == 1
+    assert fake.parts[304]["tags"] == "" and c.get("/api/content-labels/offen").json()["bauteile"] == 0

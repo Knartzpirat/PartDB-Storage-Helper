@@ -1031,7 +1031,7 @@ function showPrintCheck(art, labels, kopien, msgId) {
           <td class="actions"><button class="btn ghost" data-from="${i}" title="Dieses und alle folgenden Labels als fehlend markieren">ab hier</button></td></tr>`).join("")}</tbody></table></div>
       <div class="row"><span class="muted" id="pk-count" aria-live="polite"></span>
         <button class="btn primary" id="pk-reprint" disabled>Fehlende nachdrucken</button>
-        <button class="btn" id="pk-ok">${art === "box" ? "Alle da – als gedruckt markieren" : "Alle da – schließen"}</button></div>
+        <button class="btn" id="pk-ok">${art === "box" ? "Alle da – als gedruckt markieren" : art === "bauteile" ? `Alle da – Tags entfernen` : "Alle da – schließen"}</button></div>
     </div>`;
   el.hidden = false;
   const token = {};
@@ -1062,9 +1062,10 @@ function showPrintCheck(art, labels, kopien, msgId) {
   };
   $("#pk-reprint").onclick = () => reprintMissing(art, picked(), msgId);
   $("#pk-ok").onclick = async () => {
-    if (art !== "box") { closePrintCheck(); return; }
-    if (!confirm("Alle Box-Labels sind sauber gedruckt? Die Boxen verschwinden dann aus der Warteschlange.")) return;
+    // Der Knopf „Alle da …“ ist selbst die Bestätigung – keine zweite Rückfrage
     closePrintCheck();
+    if (art === "bauteile") { await contentDone(false); return; }
+    if (art !== "box") return;
     try { const r = await call("POST", "/api/name-labels/done"); msg(msgId, `${r.erledigt} Box(en) als beschriftet markiert.`); loadNames(); }
     catch (e) { msg(msgId, e.message, false); }
   };
@@ -1178,7 +1179,9 @@ document.querySelectorAll("[data-names-done]").forEach(b => b.onclick = async ()
 async function loadContent() {
   $("#content-list").innerHTML = `<p class="muted">Lade …</p>`;
   try {
-    const list = await call("GET", "/api/content-labels");
+    const [list, offen] = await Promise.all([call("GET", "/api/content-labels"), call("GET", "/api/content-labels/offen")]);
+    // offener Druck/Export kommt vom Server – auch nach Neuladen oder von einem anderen Gerät
+    $("#b-content-done").disabled = !(offen.bauteile || offen.nachdruck);
     QUEUE.content = list.length;
     $("#c-content").textContent = list.length;
     $("#c-content").classList.toggle("hot", list.length > 0);
@@ -1233,16 +1236,19 @@ $("#b-content-direct").onclick = async () => {
   } catch (e) { msg("#m-content", e.message, false); }
   b.disabled = directDisabled(b);
 };
-$("#b-content-done").onclick = async () => {
-  if (!confirm(`Alle Labels sauber gedruckt?\n\nTag "${META.tag}" wird bei den gedruckten Bauteilen in Part-DB entfernt `
-             + `und gedruckte Nachdrucke kommen aus der Liste.`)) return;
+$("#b-content-done").onclick = () => contentDone();
+// „Gedruckt – Tags entfernen“ – auch aus der Druckkontrolle („Alle da“). -> true, wenn ausgeführt
+async function contentDone(ask = true) {
+  if (ask && !confirm(`Alle Labels sauber gedruckt?\n\nTag "${META.tag}" wird bei den gedruckten Bauteilen in Part-DB entfernt `
+             + `und gedruckte Nachdrucke kommen aus der Liste.`)) return false;
   try {
     const r = await call("POST", "/api/content-labels/done");
     msg("#m-content", `Tag bei ${r.entfernt} Bauteilen entfernt.` + (r.nachdruck_erledigt ? ` ${r.nachdruck_erledigt} Nachdruck(e) erledigt.` : "") + (r.fehler.length ? `\nFehler: ${r.fehler.map(f => f.id + ": " + f.fehler).join("\n")}` : ""), !r.fehler.length);
     $("#b-content-done").disabled = !r.fehler.length;
     loadContent();
   } catch (e) { msg("#m-content", e.message, false); }
-};
+  return true;
+}
 
 // Automatischer CSV-Download nach dem Schreiben (abschaltbar, gespeichert pro Browser)
 function csvAutoDownload() {

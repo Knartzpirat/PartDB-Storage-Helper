@@ -938,6 +938,12 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
         return {"gedruckt": printed, "uebersprungen": skipped, "bauteile": len(part_ids),
                 "nachdruck": len(state.data["last_content_reprint"]), "labels": label_list(done)}
 
+    @app.get("/api/content-labels/offen")
+    def content_open():
+        """Wartet ein Druck/Export auf „Gedruckt – Tags entfernen“? Die Seite fragt das beim Laden ab."""
+        return {"bauteile": len(state.data["last_content_export"]),
+                "nachdruck": len(state.data["last_content_reprint"])}
+
     @app.post("/api/content-labels/done")
     def content_done():
         """Tag bei genau den Bauteilen entfernen, die im letzten Export waren; gedruckte Nachdruck-Einträge
