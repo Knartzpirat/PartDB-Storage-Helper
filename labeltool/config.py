@@ -43,6 +43,7 @@ class BoxType:
     compartments: int = 1   # Abteile – Vorbelegung bei "Neue Box" und Felder auf dem Bauteil-Label
     file: str = ""          # CSV der Bauteil-Vorlage, leer = Inhalt_<name>.csv
     lbx: str = ""           # P-touch-Vorlage im Vorlagenordner, z. B. "PartDB_Window-Div-Bin-2.lbx"
+    box_lbx: str = ""       # Box-Label-Vorlage dieser Lagerart, leer = labels.box_vorlage
 
 
 @dataclass
@@ -77,6 +78,7 @@ class Config:
     host: str = "127.0.0.1"
     port: int = 8765
     raw: dict = field(default_factory=dict)
+    template_kinds: dict = field(default_factory=dict)   # Vorlage -> "box" | "bauteil" (Stammdaten)
 
     def color_name(self, color: str) -> str | None:
         """Schreibweise aus der Palette, oder None wenn die Farbe unbekannt ist."""
@@ -103,6 +105,21 @@ class Config:
     def content_templates(self) -> dict[str, ContentTemplate]:
         """Lagerarten mit eigener CSV-Datei."""
         return {n: self.template_for(n) for n, b in self.box_types.items() if b.file}
+
+    def box_template_for(self, box_type: str) -> str:
+        """Box-Label-Vorlage einer Lagerart – eigene oder die Standardvorlage (labels.box_vorlage)."""
+        bt = self.box_types.get(box_type)
+        return (bt.box_lbx if bt and bt.box_lbx else "") or self.box_template
+
+    def box_templates(self) -> set[str]:
+        """Alle Box-Label-Vorlagen (Standard + je Lagerart)."""
+        return {t for t in [self.box_template, *(b.box_lbx for b in self.box_types.values())] if t}
+
+    def box_label_csv(self, template: str) -> str:
+        """CSV der Box-Labels einer Vorlage: Standardvorlage -> labels.box_datei, sonst <Name>_<Vorlage>.csv."""
+        if not template or template == self.box_template:
+            return self.name_label_file
+        return f"{Path(self.name_label_file).stem}_{Path(template).stem}.csv"
 
     def template_for(self, box_type: str) -> ContentTemplate:
         bt = self.box_types.get(box_type)
@@ -224,5 +241,6 @@ def parse_box_types(entries, templates=None) -> dict[str, BoxType]:
         slots = int(slots) if slots else None
         comp = v.get("abteile")
         out[name] = BoxType(name=name, file=file, lbx=str(v.get("lbx") or ""),
+                            box_lbx=str(v.get("box_vorlage") or ""),
                             compartments=int(comp) if comp else _guess_compartments(name, slots))
     return out

@@ -148,6 +148,7 @@
   .printconfirm.wrong { border-left-color: var(--err); background: var(--err-bg); }
   .printconfirm h4 { margin: 0 0 6px; font-size: 15px; }
   .printconfirm .row { margin-top: 10px; }
+  .printconfirm .pc-bands { margin: 4px 0 4px; padding-left: 20px; }
   .printconfirm input[type=number] { width: 80px; }
   .printconfirm .timer { margin-left: auto; color: var(--muted); font-size: 13px; }
   .printcheck { width: min(760px, calc(100% - 24px)); }
@@ -164,6 +165,8 @@
   .printcheck .pk-table td.actions .btn { padding: 2px 8px; font-size: 12px; }
   .printcheck .pk-table td.mono, .printcheck .pk-table td.actions { white-space: nowrap; }
   .hint { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  select[data-csv-sort] { width: auto; }
+  select.artsel { width: auto; padding: 2px 6px; font-size: 12px; font-weight: normal; vertical-align: middle; }
   /* Arbeitsablauf Bauteil-Labels: 1 drucken · 2 prüfen · 3 Tags entfernen */
   .flow { list-style: none; margin: 4px 0 0; padding: 0; display: grid; grid-template-columns: 1.6fr 1fr 1.2fr; gap: 10px; counter-reset: st; }
   .flow > li { counter-increment: st; background: var(--bg); border-radius: 8px; padding: 12px 14px 12px 46px; position: relative; min-width: 0; }
@@ -367,17 +370,22 @@
       <div class="row">
         <button class="btn primary" data-direct-names hidden>Direkt drucken</button>
         <button class="btn primary" data-print-names>Box-Labels drucken (CSV)</button>
+        <select data-csv-sort aria-label="Sortierung der CSV" title="Reihenfolge der Labels in der CSV">
+          <option value="standard">Sortierung: wie Liste</option><option value="name">nach Name</option>
+          <option value="lagerart">nach Lagerart</option><option value="inhalt">nach Inhalt</option>
+          <option value="farbe">nach Boxfarbe</option></select>
         <button class="btn" data-names-done disabled>Gedruckt ✓</button>
         <span class="muted" data-print-status></span>
       </div>
       <div class="msg" id="m-new-queue"></div>
+      <div data-box-files></div>
     </div>
   </section>
 
   <!-- Box-Labels -->
   <section id="tab-names">
     <div class="panel">
-      <h2>Box-Labels drucken <span class="muted">24-mm-Label mit Name, Barcode und Inhalt</span>
+      <h2>Box-Labels drucken <span class="muted">Label mit Name, Barcode und Inhalt – Vorlage je Lagerart (Stammdaten)</span>
         <button class="btn ghost sm" data-open data-desk title="Ausgabeordner mit den CSV-Dateien öffnen">Ordner öffnen</button></h2>
       <div class="tablewrap" data-queue-table><table class="rtable"><thead><tr><th>Name</th><th>Barcode</th><th>Inhalt</th><th>Boxfarbe</th><th>Lagerart</th><th></th></tr></thead>
         <tbody id="t-names"></tbody></table></div>
@@ -385,6 +393,10 @@
       <div class="row">
         <button class="btn primary" data-direct-names hidden>Direkt drucken</button>
         <button class="btn primary" data-print-names>Box-Labels drucken (CSV)</button>
+        <select data-csv-sort aria-label="Sortierung der CSV" title="Reihenfolge der Labels in der CSV">
+          <option value="standard">Sortierung: wie Liste</option><option value="name">nach Name</option>
+          <option value="lagerart">nach Lagerart</option><option value="inhalt">nach Inhalt</option>
+          <option value="farbe">nach Boxfarbe</option></select>
         <button class="btn" data-names-done disabled>Gedruckt ✓</button>
         <span class="muted" data-print-status></span>
       </div>
@@ -393,6 +405,7 @@
         <li>Labels prüfen und aufkleben, danach hier „Gedruckt ✓“ bestätigen.</li>
       </ol>
       <div class="msg" id="m-names"></div>
+      <div data-box-files></div>
     </div>
   </section>
 
@@ -407,6 +420,10 @@
           <div class="row">
             <button class="btn primary" id="b-content-direct" hidden>Direkt drucken</button>
             <button class="btn primary" id="b-content-export">CSVs schreiben &amp; Vorlagen anzeigen</button>
+            <select data-csv-sort aria-label="Sortierung der CSV" title="Reihenfolge der Labels in der CSV">
+          <option value="standard">Sortierung: wie Liste</option><option value="name">nach Name</option>
+          <option value="lagerart">nach Lagerart</option><option value="inhalt">nach Inhalt</option>
+          <option value="farbe">nach Boxfarbe</option></select>
           </div>
           <div class="hint" data-print-status></div></li>
         <li><strong>Prüfen</strong><span class="muted">Sind alle Labels sauber gedruckt? Sonst einfach nochmal drucken – die Tags bleiben bis Schritt 3.</span></li>
@@ -500,7 +517,7 @@
         <input type="search" id="q-types" data-mfilter="type" placeholder="Lagerart oder Vorlage suchen …" aria-label="Lagerarten durchsuchen">
         <button class="btn primary" id="b-type-new">+ Neue Lagerart</button>
       </div>
-      <div class="tablewrap"><table class="compact rtable"><thead><tr><th>Name</th><th>Abteile</th><th>P-touch-Vorlage</th><th>CSV-Datei</th><th></th></tr></thead>
+      <div class="tablewrap"><table class="compact rtable"><thead><tr><th>Name</th><th>Abteile</th><th>Bauteil-Label-Vorlage</th><th>Box-Label-Vorlage</th><th>CSV-Datei</th><th></th></tr></thead>
         <tbody id="t-types"></tbody></table></div>
       <p class="muted">Abteile = Anzahl Bauteile auf dem Bauteil-Label. Vorlagen kommen aus <span class="mono" id="tpl-dir"></span>.
         Leere CSV-Datei = <span class="mono">Inhalt_&lt;Name&gt;.csv</span>. Umbenennen ändert keine bestehenden Boxen in Part-DB.</p>
@@ -648,7 +665,7 @@ let META = null, BOXES = [];
 async function call(method, url, body) {
   const r = await fetch(url, {method, headers: {"Content-Type": "application/json"}, body: body ? JSON.stringify(body) : undefined});
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(apiError(r, j, url));
+  if (!r.ok) throw Object.assign(new Error(apiError(r, j, url)), {status: r.status});
   return j;
 }
 // Fehlertext aus einer Antwort; unbekannte Endpunkte (404 "Not Found") bekommen einen Hinweis statt Rohtext
@@ -954,10 +971,12 @@ $("#b-undo-create").onclick = async () => {
 };
 
 // ---------- Bestätigung vor dem Direktdruck
-// Zeigt Band (aus der Vorlage), eingelegtes Band und Kopien. Ohne Klick verschwindet sie nach 15 s (nichts
+// Zeigt Band (aus der Vorlage), eingelegtes Band und Kopien. Ohne Klick verschwindet sie nach 60 s (nichts
 // wird gedruckt). Passt das eingelegte Band nicht, bleibt sie stehen, bis der Rollenwechsel bestätigt ist.
-const CONFIRM_SECONDS = 15;
+// Brauchen die Labels verschiedene Bänder, kündigt sie den Druck Band für Band an (siehe runPrint).
+const CONFIRM_SECONDS = 60;
 let PC = null;
+const tapeName = mm => mm ? `${mm} mm` : "Band unbekannt";
 function closePrintConfirm(result) {
   if (!PC) return;
   clearInterval(PC.timer);
@@ -969,18 +988,23 @@ async function confirmPrint(art, ids, titel) {
   const info = await call("POST", "/api/druck/pruefen", {art, ids: ids || []});
   if (!info.labels) throw new Error(info.ohne_vorlage?.length
     ? `Keine Vorlage für: ${info.ohne_vorlage.join(", ")} – im Reiter Stammdaten eintragen.` : "Nichts zu drucken.");
-  const baender = info.baender.map(b => `${b.band_mm ? b.band_mm + " mm" : "unbekannt"} (${b.vorlagen.join(", ")})`).join(" · ");
-  const wrong = info.passt === false;
+  const plan = info.plan?.length ? info.plan : [{band_mm: null, vorlagen: [], labels: info.labels}];
+  const multi = plan.length > 1;
+  const wrong = multi ? info.passt_start === false : info.passt === false;
   const el = $("#printconfirm");
   el.className = "printconfirm" + (wrong ? " wrong" : "");
   el.innerHTML = `<h4 id="pc-title">${esc(titel)}: ${info.labels} Label(s)</h4>
-    <div>Band laut Vorlage: <strong>${esc(baender)}</strong></div>
-    <div>Eingelegt: <strong>${esc(info.eingelegt || "nicht erkannt")}</strong>${info.passt === true ? " ✓" : ""}</div>
-    ${wrong ? `<div class="warn" style="margin-top:8px">Falsches Band eingelegt. Bitte Rolle wechseln und danach bestätigen.</div>` : ""}
+    <div${multi ? ` class="warn" style="margin:4px 0 8px"` : ""}><strong>${multi
+        ? `Dieser Druck braucht ${plan.length} verschiedene Bänder – bitte bereitlegen:` : "Band laut Vorlage:"}</strong>
+      <ol class="pc-bands">${plan.map((b, i) => `<li><strong>${esc(tapeName(b.band_mm))}</strong> – ${b.labels} Label(s)
+        <span class="muted">(${esc(b.vorlagen.join(", "))})</span>${i === 0 && info.passt_start ? " – eingelegt ✓" : ""}</li>`).join("")}</ol>
+      ${multi ? "Gedruckt wird Band für Band. Nach jedem Band bestätigst du, dass alle Labels da sind, und legst das nächste ein." : ""}</div>
+    <div>Eingelegt: <strong>${esc(info.eingelegt || "nicht erkannt")}</strong></div>
+    ${wrong ? `<div class="warn" style="margin-top:8px">Falsches Band eingelegt – bitte ${esc(tapeName(plan[0].band_mm))} einlegen und danach bestätigen.</div>` : ""}
     ${info.ohne_vorlage?.length ? `<div class="warn" style="margin-top:8px">Ohne Vorlage, wird übersprungen: ${esc(info.ohne_vorlage.join(", "))}</div>` : ""}
     <div class="row"><label for="pc-copies" style="margin:0">Kopien je Label</label>
       <input id="pc-copies" type="number" min="1" max="50" value="1">
-      <button class="btn primary" id="pc-ok">${wrong ? "Rolle gewechselt – jetzt drucken" : "Drucken"}</button>
+      <button class="btn primary" id="pc-ok">${wrong ? "Band gewechselt – " : ""}${multi ? "Mit " : ""}${esc(tapeName(plan[0].band_mm))} drucken</button>
       <button class="btn" id="pc-cancel">Abbrechen</button>
       <span class="timer" id="pc-timer"></span></div>`;
   el.hidden = false;
@@ -995,11 +1019,67 @@ async function confirmPrint(art, ids, titel) {
     // Eingaben halten die Leiste offen
     $("#pc-copies").addEventListener("input", () => { if (PC && !wrong) PC.left = CONFIRM_SECONDS; });
     $("#pc-ok").onclick = () => closePrintConfirm({
-      kopien: Math.min(50, Math.max(1, +$("#pc-copies").value || 1)), band_gewechselt: wrong});
+      kopien: Math.min(50, Math.max(1, +$("#pc-copies").value || 1)), band_gewechselt: wrong, plan});
     $("#pc-cancel").onclick = () => closePrintConfirm(null);
     el.onkeydown = e => { if (e.key === "Escape") closePrintConfirm(null); };
     $("#pc-ok").focus();
   });
+}
+// Aufforderung zum Bandwechsel (ohne Zeitablauf). -> true = eingelegt, false = abgebrochen
+function askTape(step, i, n, fehler) {
+  closePrintConfirm(null);
+  const el = $("#printconfirm");
+  el.className = "printconfirm" + (fehler ? " wrong" : "");
+  el.innerHTML = `<h4 id="pc-title">Band wechseln – Band ${i + 1} von ${n}</h4>
+    <div>Bitte jetzt <strong>${esc(tapeName(step.band_mm))}</strong> einlegen – für ${step.labels} Label(s) (${esc(step.vorlagen.join(", "))}).</div>
+    ${fehler ? `<div class="warn" style="margin-top:8px">${esc(fehler)}</div>` : ""}
+    <div class="row"><button class="btn primary" id="pc-ok">Band eingelegt – drucken</button>
+      <button class="btn" id="pc-cancel">Abbrechen</button></div>`;
+  el.hidden = false;
+  return new Promise(resolve => {
+    PC = {resolve, timer: null};
+    $("#pc-ok").onclick = () => closePrintConfirm(true);
+    $("#pc-cancel").onclick = () => closePrintConfirm(false);
+    el.onkeydown = e => { if (e.key === "Escape") closePrintConfirm(false); };
+    $("#pc-ok").focus();
+  });
+}
+// Ganzer Druckablauf. send(opts) druckt einen Schritt und liefert die Antwort (mit labels), onResult(r, schritt)
+// meldet ihn. Ein Band: drucken + Druckkontrolle. Mehrere Bänder: Band für Band, angefangen mit dem eingelegten;
+// nach jedem Band Druckkontrolle bis „Alle da – weiter“, dann nächstes Band einlegen lassen. Liegt das falsche
+// Band ein, meldet b-PAC das vor dem Senden (409) – dann erneut zum Wechseln auffordern.
+// ctx: Druckkontrolle, an die das Ergebnis zurückgeht (Nachdruck fehlender innerhalb eines Schritts).
+async function runPrint({art, ids = [], titel, msgId, send, onResult, ctx = null, checkArt = art}) {
+  const start = await confirmPrint(art, ids, titel);
+  if (!start) { msg(msgId, "Druck nicht bestätigt – nichts gedruckt.", false); return false; }
+  const plan = start.plan, multi = plan.length > 1;
+  for (let i = 0; i < plan.length; i++) {
+    const step = plan[i], label = multi ? `Band ${i + 1} von ${plan.length} (${tapeName(step.band_mm)})` : tapeName(step.band_mm);
+    let gewechselt = start.band_gewechselt;
+    if (i > 0) {
+      if (!await askTape(step, i, plan.length, "")) { msg(msgId, `Abgebrochen – ${label} und folgende nicht gedruckt.`, false); return false; }
+      gewechselt = true;
+    }
+    let r;
+    for (;;) {
+      try {
+        r = await send({kopien: start.kopien, band_gewechselt: gewechselt,
+                        ...(multi ? {nur_band: true, band_mm: step.band_mm, fortsetzen: i > 0} : {})});
+        break;
+      } catch (e) {
+        if (e.status !== 409 || !/Falsches Band/.test(e.message)) throw e;
+        if (!await askTape(step, i, plan.length, e.message)) { msg(msgId, `Abgebrochen – ${label || "nichts"} gedruckt.`, false); return false; }
+        gewechselt = true;
+      }
+    }
+    onResult(r, label);
+    const next = plan[i + 1];
+    if (!next) { showPrintCheck(checkArt, r.labels, start.kopien, msgId, ctx || {schritt: label}); break; }
+    const weiter = await showPrintCheck(checkArt, r.labels, start.kopien, msgId,
+      {schritt: label, weiter: `Alle da – weiter mit ${tapeName(next.band_mm)}`});
+    if (!weiter) { msg(msgId, `Abgebrochen nach ${label} – die übrigen Bänder wurden nicht gedruckt.`, false); return false; }
+  }
+  return true;
 }
 
 // ---------- Druckkontrolle nach dem Direktdruck
@@ -1008,22 +1088,33 @@ async function confirmPrint(art, ids, titel) {
 // fehlen, weiß Windows nicht – das sieht nur, wer vor dem Drucker steht.
 const QUEUE_POLL_MS = 2000, QUEUE_MAX_MS = 10 * 60 * 1000;
 let PK = null;
-function closePrintCheck() {
+// result: an den wartenden Druckablauf (true = weiter, false = abgebrochen). handover: Ablauf nicht beenden,
+// die nächste Druckkontrolle übernimmt ihn (Nachdruck fehlender).
+function closePrintCheck(result = false, handover = false) {
+  const done = PK?.step?.resolve;
   PK = null;
   $("#printcheck").hidden = true; $("#printcheck").innerHTML = "";
+  if (done && !handover) done(result);
 }
-function showPrintCheck(art, labels, kopien, msgId) {
-  closePrintCheck();
+// step: {schritt: "Band 1 von 2 (12 mm)", weiter: Text des Weiter-Knopfs, resolve} – mit „weiter“ wartet der
+// Druckablauf auf „Alle da – weiter“ statt „Gedruckt“ zu bestätigen. Liefert ein Promise (true = weiter).
+function showPrintCheck(art, labels, kopien, msgId, step = null) {
+  const handover = !!(step && PK?.step && step.resolve === PK.step.resolve);
+  closePrintCheck(false, handover);
   const uniq = [...new Map((labels || []).map(l => [l.id, l])).values()];   // Reihenfolge = Druckreihenfolge
-  if (!uniq.length) return;
+  if (!uniq.length) { step?.resolve?.(!!step.weiter); return Promise.resolve(!!step?.weiter); }
+  let resolveFn = step?.resolve;
+  const promise = resolveFn ? null : new Promise(r => { resolveFn = r; });
+  step = step ? {...step, resolve: resolveFn} : {resolve: resolveFn};
   const withTpl = uniq.some(l => l.vorlage);
   const el = $("#printcheck");
   el.className = "printconfirm printcheck";
-  el.innerHTML = `<div class="pk-head"><h4 id="pk-title">Druckkontrolle: ${uniq.length} Label(s)${kopien > 1 ? ` × ${kopien} Kopien` : ""}</h4>
+  el.innerHTML = `<div class="pk-head"><h4 id="pk-title">Druckkontrolle${step.schritt ? ` – ${esc(step.schritt)}` : ""}: ${uniq.length} Label(s)${kopien > 1 ? ` × ${kopien} Kopien` : ""}</h4>
       <button class="btn ghost sm" id="pk-min" aria-expanded="true" aria-controls="pk-body">Einklappen</button></div>
     <div id="pk-queue" class="muted" aria-live="polite">Frage den Drucker ab …</div>
     <div id="pk-body">
-      <div class="hint">Fehlende ankreuzen. Ist das Band ausgegangen, fehlt meist alles ab einem Label – dort auf „ab hier“ klicken.</div>
+      <div class="hint">Band leer oder Label verdruckt? Neues Band einlegen, beim ersten fehlenden Label auf „ab hier“ klicken
+        und ab dort wiederholen. Einzelne Labels lassen sich auch ankreuzen.</div>
       <div class="pk-table"><table class="compact"><thead><tr>
           <th><input type="checkbox" id="pk-all" aria-label="Alle als fehlend markieren"></th><th>#</th><th>Box</th>${withTpl ? `<th class="pk-tpl">Vorlage</th>` : ""}<th></th></tr></thead>
         <tbody>${uniq.map((l, i) => `<tr data-i="${i}"><td><input type="checkbox" value="${l.id}" aria-label="${esc(l.name)} fehlt"></td>
@@ -1031,11 +1122,13 @@ function showPrintCheck(art, labels, kopien, msgId) {
           <td class="actions"><button class="btn ghost" data-from="${i}" title="Dieses und alle folgenden Labels als fehlend markieren">ab hier</button></td></tr>`).join("")}</tbody></table></div>
       <div class="row"><span class="muted" id="pk-count" aria-live="polite"></span>
         <button class="btn primary" id="pk-reprint" disabled>Fehlende nachdrucken</button>
-        <button class="btn" id="pk-ok">${art === "box" ? "Alle da – als gedruckt markieren" : art === "bauteile" ? `Alle da – Tags entfernen` : "Alle da – schließen"}</button></div>
+        <button class="btn" id="pk-ok">${step.weiter ? esc(step.weiter) : art === "box" ? "Alle da – als gedruckt markieren"
+          : art === "bauteile" ? `Alle da – Tags entfernen` : "Alle da – schließen"}</button>
+        <button class="btn" id="pk-stop" title="${step.weiter ? "Übrige Bänder nicht drucken" : "Schließen, ohne etwas zu bestätigen"}">Abbrechen</button></div>
     </div>`;
   el.hidden = false;
   const token = {};
-  PK = {token};
+  PK = {token, step, art, kopien};
   const boxes = [...el.querySelectorAll("tbody input")];
   const picked = () => boxes.filter(i => i.checked).map(i => +i.value);
   const update = () => {
@@ -1043,9 +1136,13 @@ function showPrintCheck(art, labels, kopien, msgId) {
     boxes.forEach(i => i.closest("tr").classList.toggle("miss", i.checked));
     $("#pk-all").checked = n === boxes.length;
     $("#pk-all").indeterminate = n > 0 && n < boxes.length;
+    // durchgehend bis zum Ende markiert = „ab Nr. X wiederholen“
+    const first = boxes.findIndex(i => i.checked);
+    const tail = n && boxes.slice(first).every(i => i.checked);
     $("#pk-count").textContent = n ? `${n} von ${boxes.length} fehlen` : "Nichts als fehlend markiert";
     $("#pk-reprint").disabled = !n;
-    $("#pk-reprint").textContent = n ? `${n} fehlende(s) nachdrucken` : "Fehlende nachdrucken";
+    $("#pk-reprint").textContent = !n ? "Fehlende nachdrucken"
+      : tail && n > 1 ? `Ab Nr. ${first + 1} wiederholen (${n} Labels)` : `${n} fehlende(s) nachdrucken`;
   };
   el.querySelector("tbody").onclick = e => {
     const from = e.target.closest("[data-from]");
@@ -1061,9 +1158,12 @@ function showPrintCheck(art, labels, kopien, msgId) {
     $("#pk-min").setAttribute("aria-expanded", String(!body.hidden));
   };
   $("#pk-reprint").onclick = () => reprintMissing(art, picked(), msgId);
+  $("#pk-stop").onclick = () => closePrintCheck(false);
   $("#pk-ok").onclick = async () => {
     // Der Knopf „Alle da …“ ist selbst die Bestätigung – keine zweite Rückfrage
-    closePrintCheck();
+    const weiter = !!step.weiter;
+    closePrintCheck(true);
+    if (weiter) return;            // nächstes Band – „Gedruckt“ kommt nach dem letzten Band
     if (art === "bauteile") { await contentDone(); return; }
     if (art !== "box") return;
     try { const r = await call("POST", "/api/name-labels/done"); msg(msgId, `${r.erledigt} Box(en) als beschriftet markiert.`); loadNames(); }
@@ -1071,6 +1171,7 @@ function showPrintCheck(art, labels, kopien, msgId) {
   };
   update();
   pollQueue(token);
+  return promise || Promise.resolve(null);
 }
 async function pollQueue(token) {
   const start = Date.now();
@@ -1100,18 +1201,18 @@ async function pollQueue(token) {
   }
 }
 async function reprintMissing(art, ids, msgId) {
-  if (!ids.length) return;
+  if (!ids.length || !PK) return;
+  const ctx = PK.step;              // Ergebnis geht an dieselbe Druckkontrolle (bzw. denselben Bandschritt)
   const el = $("#printcheck");
   el.hidden = true;                 // die Bestätigung erscheint an derselben Stelle
   try {
-    const opts = await confirmPrint(art === "box" ? "box" : "nachdruck", ids, "Fehlende nachdrucken");
-    if (!opts) { el.hidden = !PK; return; }
-    const r = art === "box" ? await call("POST", "/api/name-labels/print", {...opts, ids})
-                            : await call("POST", "/api/content-labels/nachdruck", {ids, direkt: true, ...opts});
-    msg(msgId, `${r.labels.length} fehlende(s) Label(s) nachgedruckt: ${r.labels.map(l => l.name).join(", ")}`);
-    showPrintCheck(art, r.labels, opts.kopien, msgId);
+    const ok = await runPrint({art: art === "box" ? "box" : "nachdruck", ids, titel: "Fehlende nachdrucken", msgId, ctx, checkArt: art,
+      send: o => art === "box" ? call("POST", "/api/name-labels/print", {...o, ids})
+                               : call("POST", "/api/content-labels/nachdruck", {ids, direkt: true, ...o}),
+      onResult: r => msg(msgId, `${r.labels.length} fehlende(s) Label(s) nachgedruckt: ${r.labels.map(l => l.name).join(", ")}`)});
+    if (!ok && PK) el.hidden = false;
     if (art === "box") loadNames();
-  } catch (e) { msg(msgId, e.message, false); el.hidden = !PK; }
+  } catch (e) { msg(msgId, e.message, false); if (PK) el.hidden = false; }
 }
 
 // ---------- Box-Labels
@@ -1151,23 +1252,31 @@ async function unqueue(id, name) {
 const namesMsg = () => $("#tab-new").classList.contains("active") ? "#m-new-queue" : "#m-names";
 document.querySelectorAll("[data-print-names]").forEach(b => b.onclick = async () => {
   try {
-    const r = await call("POST", "/api/name-labels/export", {open_template: true});
-    const tpl = r.vorlage ? `P-touch Editor wird geöffnet – dort alle ${r.labels} Datensätze drucken.`
-                          : `Vorlage nicht geöffnet: ${r.vorlage_fehler}\nCSV: ${r.datei}`;
-    msg(namesMsg(), `${r.labels} Box-Label(s): ${r.boxen.join(", ")}\n${tpl}`, !!r.vorlage);
-    downloadCsv([r.datei]);
+    const r = await call("POST", "/api/name-labels/export", {open_template: true, sortierung: csvSort()});
+    const files = r.dateien || [{datei: r.datei, vorlage: "", labels: r.labels}];
+    if (files.length > 1) {      // Lagerarten mit eigener Box-Label-Vorlage: je Vorlage eine CSV, einzeln öffnen
+      msg(namesMsg(), `${r.labels} Box-Label(s) in ${files.length} CSV-Dateien – je Vorlage eine. Unten die Vorlagen einzeln öffnen und drucken.`);
+    } else {
+      const tpl = r.vorlage ? `P-touch Editor wird geöffnet – dort alle ${r.labels} Datensätze drucken.`
+                            : `Vorlage nicht geöffnet: ${r.vorlage_fehler}\nCSV: ${r.datei}`;
+      msg(namesMsg(), `${r.labels} Box-Label(s): ${r.boxen.join(", ")}\n${tpl}`, !!r.vorlage);
+    }
+    document.querySelectorAll("[data-box-files]").forEach(el => el.innerHTML = files.length > 1 ? boxFilesTable(files) : "");
+    downloadCsv(files.map(f => f.datei));
     loadNames();
   } catch (e) { msg(namesMsg(), e.message, false); }
 });
 document.querySelectorAll("[data-direct-names]").forEach(b => b.onclick = async () => {
   b.disabled = true;
   try {
-    const opts = await confirmPrint("box", [], "Box-Labels");
-    if (!opts) { msg(namesMsg(), "Druck nicht bestätigt – nichts gedruckt.", false); b.disabled = directDisabled(b); return; }
-    const r = await call("POST", "/api/name-labels/print", opts);
-    msg(namesMsg(), `${r.gedruckt} Box-Label(s) an den Drucker geschickt: ${r.boxen.join(", ")}\nWenn alle sauber rausgekommen sind: „Gedruckt ✓“.`);
-    showPrintCheck("box", r.labels, opts.kopien, namesMsg());
-    loadNames();
+    const msgId = namesMsg();
+    await runPrint({art: "box", titel: "Box-Labels", msgId,
+      send: o => call("POST", "/api/name-labels/print", o),
+      onResult: (r, schritt) => {
+        msg(msgId, `${schritt ? schritt + ": " : ""}${r.gedruckt} Box-Label(s) an den Drucker geschickt: ${r.boxen.join(", ")}`
+                   + `\nWenn alle sauber rausgekommen sind: „Gedruckt ✓“.`);
+        loadNames();
+      }});
   } catch (e) { msg(namesMsg(), e.message, false); }
   b.disabled = directDisabled(b);
 });
@@ -1216,7 +1325,7 @@ async function loadContent() {
 $("#b-content-reload").onclick = loadContent;
 $("#b-content-export").onclick = async () => {
   try {
-    const r = await call("POST", "/api/content-labels/export");
+    const r = await call("POST", "/api/content-labels/export", {sortierung: csvSort()});
     msg("#m-content", `${r.bauteile} getaggte Bauteile${r.nachdruck ? ` und ${r.nachdruck} Nachdruck(e)` : ""} in ${r.dateien.length} Datei(en) geschrieben. Vorlage öffnen, alle Datensätze drucken, dann „Gedruckt – Tags entfernen“.`);
     $("#content-files").innerHTML = csvFilesTable(r.dateien);
     downloadCsv(r.dateien.map(d => d.datei));
@@ -1226,14 +1335,14 @@ $("#b-content-export").onclick = async () => {
 $("#b-content-direct").onclick = async () => {
   const b = $("#b-content-direct"); b.disabled = true;
   try {
-    const opts = await confirmPrint("bauteile", [], "Bauteil-Labels");
-    if (!opts) { msg("#m-content", "Druck nicht bestätigt – nichts gedruckt.", false); b.disabled = directDisabled(b); return; }
-    const r = await call("POST", "/api/content-labels/print", opts);
-    const lines = r.gedruckt.map(g => `${g.vorlage}: ${g.labels} Label(s)`);
-    if (r.uebersprungen.length) lines.push(`Ohne Vorlage übersprungen: ${r.uebersprungen.join(", ")}`);
-    msg("#m-content", `Gedruckt:\n${lines.join("\n")}\nWenn alles passt: „Gedruckt – Tags entfernen“.`, !r.uebersprungen.length);
-    showPrintCheck("bauteile", r.labels, opts.kopien, "#m-content");
-    $("#b-content-done").disabled = !(r.bauteile || r.nachdruck);
+    await runPrint({art: "bauteile", titel: "Bauteil-Labels", msgId: "#m-content",
+      send: o => call("POST", "/api/content-labels/print", o),
+      onResult: (r, schritt) => {
+        const lines = r.gedruckt.map(g => `${g.vorlage}: ${g.labels} Label(s)`);
+        if (r.uebersprungen.length) lines.push(`Ohne Vorlage übersprungen: ${r.uebersprungen.join(", ")}`);
+        msg("#m-content", `Gedruckt${schritt ? " – " + schritt : ""}:\n${lines.join("\n")}\nWenn alles passt: „Gedruckt – Tags entfernen“.`, !r.uebersprungen.length);
+        $("#b-content-done").disabled = !(r.bauteile || r.nachdruck);
+      }});
   } catch (e) { msg("#m-content", e.message, false); }
   b.disabled = directDisabled(b);
 };
@@ -1261,6 +1370,17 @@ function downloadCsv(pfade) {
   document.body.appendChild(a); a.click(); a.remove();
 }
 $("#s-csv-dl").checked = csvAutoDownload();
+// Sortierung der CSV: eine Einstellung für alle Auswahlfelder, pro Browser gemerkt
+function csvSort() {
+  try { return localStorage.getItem("csv-sort") || "standard"; } catch (e) { return "standard"; }
+}
+document.querySelectorAll("[data-csv-sort]").forEach(sel => {
+  sel.value = csvSort();
+  sel.addEventListener("change", () => {
+    try { localStorage.setItem("csv-sort", sel.value); } catch (e) { /* privat */ }
+    document.querySelectorAll("[data-csv-sort]").forEach(o => o.value = sel.value);
+  });
+});
 $("#s-csv-dl").addEventListener("change", e => {
   try { localStorage.setItem("csv-download", e.target.checked ? "an" : "aus"); } catch (err) { /* privat */ }
 });
@@ -1364,6 +1484,17 @@ $("#f-reprint").addEventListener("input", () => reprintSearch());
 $("#f-reprint").addEventListener("keydown", e => { if (e.key === "Enter") reprintSearch(true); });
 $("#b-reprint-add").onclick = addToList;
 
+function boxFilesTable(files) {
+  return `<table style="margin-top:12px"><thead><tr><th>CSV</th><th>Box-Label-Vorlage</th><th>Labels</th><th></th></tr></thead><tbody>`
+    + files.map(f => `<tr><td class="mono">${esc(fname(f.datei))}</td><td class="mono">${esc(f.vorlage)}</td><td>${f.labels}</td>
+      <td class="actions"><button class="btn primary" data-desk onclick="openBoxTemplate(${jsArg(f.vorlage)}, this)">In P-touch öffnen</button></td></tr>`).join("")
+    + `</tbody></table>`;
+}
+async function openBoxTemplate(vorlage, btn) {
+  btn.disabled = true;
+  try { await call("POST", "/api/templates/open", {box_type: null, box_vorlage: vorlage}); btn.textContent = "Geöffnet ✓"; }
+  catch (e) { msg(namesMsg(), e.message, false); btn.disabled = false; applyGates(); }
+}
 async function openTemplate(boxType, btn) {
   btn.disabled = true;
   try { await call("POST", "/api/templates/open", {box_type: boxType}); btn.textContent = "Geöffnet ✓"; }
@@ -1557,17 +1688,21 @@ function renderTypes() {
   const lbx = t => !t.lbx ? `<span class="muted">–</span>`
     : t.lbx_ok ? `<span class="mono">${esc(t.lbx)}</span>` : `<span class="mono">${esc(t.lbx)}</span> <span class="warn">fehlt</span>`;
   const row = t => isEdit("type", t.name) ? typeEditRow(t) : `<tr>
-    <td class="mono lead1">${esc(t.name)}</td><td data-label="Abteile">${t.compartments}</td><td data-label="P-touch-Vorlage">${lbx(t)}</td>
+    <td class="mono lead1">${esc(t.name)}</td><td data-label="Abteile">${t.compartments}</td><td data-label="Bauteil-Label-Vorlage">${lbx(t)}</td>
+    <td data-label="Box-Label-Vorlage">${!t.box_lbx ? `<span class="muted">Standard</span>`
+      : `<span class="mono">${esc(t.box_lbx)}</span>${t.box_lbx_ok ? "" : ` <span class="warn">fehlt</span>`}`}</td>
     <td class="mono" data-label="CSV-Datei">${t.file ? esc(t.file) : `<span class="muted">${esc(t.vorlage.file)}</span>`}</td>${actions("type", t.name)}</tr>`;
   $("#t-types").innerHTML = MASTER.lagerarten.map(row).join("")
-    + (isEdit("type", null) ? typeEditRow({name: "", compartments: 1, lbx: "", file: ""}) : "");
+    + (isEdit("type", null) ? typeEditRow({name: "", compartments: 1, lbx: "", box_lbx: "", file: ""}) : "");
 }
 function typeEditRow(t) {
   return `<tr id="edit-row">
     <td data-label="Name"><input id="e-tname" value="${esc(t.name)}" placeholder="z. B. WinBin8" aria-label="Name der Lagerart"></td>
     <td data-label="Abteile"><input id="e-comp" type="number" min="1" max="99" value="${t.compartments}" aria-label="Abteile"></td>
-    <td data-label="P-touch-Vorlage"><select id="e-lbx" aria-label="P-touch-Vorlage"><option value="">– keine –</option>${[...new Set([...MASTER.vorlagen, t.lbx].filter(Boolean))]
+    <td data-label="Bauteil-Label-Vorlage"><select id="e-lbx" aria-label="Bauteil-Label-Vorlage"><option value="">– keine –</option>${[...new Set([...MASTER.vorlagen.filter(f => !(MASTER.box_vorlagen || []).includes(f)), t.lbx].filter(Boolean))]
       .map(f => `<option ${f === t.lbx ? "selected" : ""}>${esc(f)}</option>`).join("")}</select></td>
+    <td data-label="Box-Label-Vorlage"><select id="e-boxlbx" aria-label="Box-Label-Vorlage"><option value="">Standard (${esc(META?.box_vorlage || "–")})</option>${[...new Set([...(MASTER.box_vorlagen || []), t.box_lbx].filter(Boolean))]
+      .map(f => `<option ${f === t.box_lbx ? "selected" : ""}>${esc(f)}</option>`).join("")}</select></td>
     <td data-label="CSV-Datei"><input id="e-file" aria-label="CSV-Datei" value="${esc(t.file)}" placeholder="Inhalt_${esc(t.name || "<Name>")}.csv"></td>${editActions("type")}</tr>`;
 }
 function startEdit(kind, key) {
@@ -1593,7 +1728,7 @@ async function saveEdit(kind) {
     color: () => ({name: $("#e-cname").value.trim(), hex: $("#e-hextext").value.trim()}),
     cat: () => ({key: $("#e-key").value.trim(), name: $("#e-name").value.trim(), color: $("#e-color").value}),
     type: () => ({name: $("#e-tname").value.trim(), compartments: +$("#e-comp").value || 1,
-                  lbx: $("#e-lbx").value, file: $("#e-file").value.trim()}),
+                  lbx: $("#e-lbx").value, box_lbx: $("#e-boxlbx").value, file: $("#e-file").value.trim()}),
   }[kind]();
   const newKey = kind === "cat" ? body.key : body.name;
   const used = isNew ? 0 : usedBy(kind, key).length;
@@ -1784,13 +1919,17 @@ async function confirmPendingDeletes() {
 }
 
 function tplHead(v, i, open) {
-  const uses = [...(v.box_label ? [`<span class="chip">Box-Label</span>`] : []),
-                ...(v.lagerarten || []).map(t => `<span class="chip mono">${esc(t)}</span>`)];
+  const uses = [...(v.box_standard ? [`<span class="chip" title="Box-Label aller Lagerarten ohne eigene Box-Label-Vorlage">Standard-Box-Label</span>`] : []),
+                ...(v.box_label ? v.box_lagerarten || [] : v.lagerarten || []).map(t => `<span class="chip mono">${esc(t)}</span>`)];
+  const art = `<select class="artsel" aria-label="Art der Vorlage ${esc(v.datei)}" title="${v.art_festgelegt ? "festgelegt" : "automatisch erkannt"}"
+      onchange="setTplKind(${jsArg(v.datei)}, this.value)">
+      <option value="bauteil" ${v.box_label ? "" : "selected"}>Bauteil-Label${!v.box_label && !v.art_festgelegt ? " (erkannt)" : ""}</option>
+      <option value="box" ${v.box_label ? "selected" : ""}>Box-Label${v.box_label && !v.art_festgelegt ? " (erkannt)" : ""}</option></select>`;
   const len = v.laenge_mm ? ` × ${mm(v.laenge_mm)} mm` : " · Länge automatisch";
   // Eine Zeile: Name · Band × Länge · genutzt von; darunter die Felder dezent
   return `<div class="tplhead">
     <div class="tplinfo">
-      <h3><span class="mono">${esc(v.datei)}</span> <span class="chip band">${v.band_mm ? mm(v.band_mm) + " mm" : "Band ?"}${len}</span>
+      <h3><span class="mono">${esc(v.datei)}</span> <span class="chip band">${v.band_mm ? mm(v.band_mm) + " mm" : "Band ?"}${len}</span> ${art}
         <span class="uses"><span class="muted">genutzt von</span>${uses.join("") || `<span class="muted">– nicht zugeordnet</span>`}</span></h3>
       <div class="chips fields"><span class="muted" style="font-size:11.5px">Felder:</span>${(v.felder || []).map(f => `<span class="chip mono field">${esc(f)}</span>`).join("")
         || `<span class="muted" style="font-size:11.5px">keine Datenbankfelder</span>`}</div>
@@ -1799,6 +1938,15 @@ function tplHead(v, i, open) {
     <button class="btn sm${open ? " primary" : ""}" aria-expanded="${open}" aria-controls="tw-${i}"
       onclick="toggleWork(${jsArg(v.datei)})">${open ? "Schließen" : "Vorschau &amp; Bearbeiten"}</button>
   </div>`;
+}
+async function setTplKind(datei, art) {
+  try {
+    await call("PUT", `/api/vorlagen/${encodeURIComponent(datei)}/art`, {art});
+    msg("#m-tpl", `${datei} ist jetzt ${art === "box" ? "ein Box-Label – erscheint bei den Lagerarten unter „Box-Label-Vorlage“"
+                                                      : "ein Bauteil-Label – erscheint bei den Lagerarten unter „Bauteil-Label-Vorlage“"}.`);
+    await loadTemplates(TW?.datei);
+    call("GET", "/api/stammdaten").then(renderMaster).catch(() => {});
+  } catch (e) { msg("#m-tpl", e.message, false); loadTemplates(TW?.datei); }
 }
 function toggleWork(datei) {
   if (TW?.datei === datei) closeWork(); else openWork(datei);
@@ -1973,16 +2121,24 @@ async function toggleCopy(t) {
   try { types = (await call("GET", "/api/stammdaten")).lagerarten || types; } catch (e) { /* META reicht */ }
   if (TW !== t) return;
   const label = x => `${x.name} – ${x.compartments} Abteil${x.compartments == 1 ? "" : "e"}`;
-  const free = types.filter(x => !x.lbx), used = types.filter(x => x.lbx);
+  // Lagerarten je nach Art der neuen Vorlage: Bauteil-Label -> lbx, Box-Label -> box_lbx
+  const typeOptions = art => {
+    const key = art === "box" ? "box_lbx" : "lbx";
+    const free = types.filter(x => !x[key]), used = types.filter(x => x[key]);
+    return `<option value="">– keine –</option>
+      ${free.length ? `<optgroup label="${art === "box" ? "Nutzt die Standard-Box-Vorlage" : "Ohne Vorlage"}">${free.map(x => `<option value="${esc(x.name)}">${esc(label(x))}</option>`).join("")}</optgroup>` : ""}
+      ${used.length ? `<optgroup label="Hat schon eine Vorlage (wird ersetzt)">${used.map(x => `<option value="${esc(x.name)}">${esc(label(x))} · jetzt ${esc(x[key])}</option>`).join("")}</optgroup>` : ""}`;
+  };
+  const srcArt = t.box_label ? "box" : "bauteil";
   box.innerHTML = `
     <div class="grid">
       <div><label for="tw-cname">Neuer Dateiname</label>
         <input id="tw-cname" spellcheck="false" autocomplete="off"><div class="hint">Endung .lbx wird ergänzt; die Datei landet im Vorlagenordner.</div></div>
-      <div><label for="tw-ctype">Lagerart zuweisen (optional)</label><select id="tw-ctype">
-        <option value="">– keine –</option>
-        ${free.length ? `<optgroup label="Ohne Vorlage">${free.map(x => `<option value="${esc(x.name)}">${esc(label(x))}</option>`).join("")}</optgroup>` : ""}
-        ${used.length ? `<optgroup label="Hat schon eine Vorlage (wird ersetzt)">${used.map(x => `<option value="${esc(x.name)}">${esc(label(x))} · jetzt ${esc(x.lbx)}</option>`).join("")}</optgroup>` : ""}
-      </select></div>
+      <div><label for="tw-cart">Art der Vorlage</label><select id="tw-cart">
+        <option value="bauteil" ${srcArt === "bauteil" ? "selected" : ""}>Bauteil-Label (Bauteile der Box)</option>
+        <option value="box" ${srcArt === "box" ? "selected" : ""}>Box-Label (Name, Barcode, Inhalt der Box)</option></select>
+        <div class="hint">Bestimmt die Beispieldaten und in welcher Auswahl der Lagerarten sie erscheint.</div></div>
+      <div><label for="tw-ctype">Lagerart zuweisen (optional)</label><select id="tw-ctype">${typeOptions(srcArt)}</select></div>
     </div>
     <div class="row">
       <button class="btn primary" id="tw-cgo">Kopie anlegen &amp; im Editor öffnen</button>
@@ -1994,6 +2150,7 @@ async function toggleCopy(t) {
   name.value = suggestTplName(t.datei, null);
   name.oninput = () => { touched = true; };
   sel.onchange = () => { if (!touched) name.value = suggestTplName(t.datei, types.find(x => x.name === sel.value)); };
+  $("#tw-cart").onchange = () => { sel.innerHTML = typeOptions($("#tw-cart").value); };
   $("#tw-ccancel").onclick = () => toggleCopy(t);
   $("#tw-cgo").onclick = () => createCopy(t, types);
   box.onkeydown = e => {
@@ -2009,17 +2166,19 @@ async function createCopy(t, types) {
   if (/[\\/:*?"<>|]/.test(name)) return msg("#m-tw", 'Der Dateiname darf keines dieser Zeichen enthalten: \\ / : * ? " < > |', false);
   name += ".lbx";
   if (TPL.list.some(v => v.datei.toLowerCase() === name.toLowerCase())) return msg("#m-tw", `„${name}“ gibt es schon im Vorlagenordner.`, false);
-  const lagerart = $("#tw-ctype").value || null;
+  const lagerart = $("#tw-ctype").value || null, art = $("#tw-cart").value;
   const b = $("#tw-cgo"); b.disabled = true;
   let r;
-  try { r = await call("POST", "/api/vorlagen/kopie", {quelle: t.datei, name, lagerart}); }
+  try { r = await call("POST", "/api/vorlagen/kopie", {quelle: t.datei, name, lagerart, art}); }
   catch (e) { if (TW === t) { msg("#m-tw", e.message, false); b.disabled = false; } return; }
   await loadTemplates(r.datei || name);
   if (r.lagerart) call("GET", "/api/stammdaten").then(renderMaster).catch(() => {});
   const v = TPL.list.find(x => x.datei === (r.datei || name));
   const typ = types.find(x => x.name === r.lagerart);
   let hint = "";
-  if (typ) {
+  if (typ && r.art === "box") {
+    hint = `\nBox-Labels der Lagerart „${typ.name}“ nutzen jetzt diese Vorlage.`;
+  } else if (typ) {
     const need = [];
     for (let i = 1; i <= typ.compartments; i++) need.push(`Section${i}`, `Footprint${i}`);
     const missing = need.filter(f => !(v?.felder || []).includes(f));
@@ -2027,7 +2186,7 @@ async function createCopy(t, types) {
       ? `\nFür ${typ.compartments} Abteile fehlen noch die Felder: ${missing.join(", ")}.\nIm Editor als Datenbankfelder ergänzen (je Abteil Section = Bauteil, Footprint = Bauform), speichern, dann „Vorschau aktualisieren“.`
       : `\nAlle Section-/Footprint-Felder für ${typ.compartments} Abteile sind schon vorhanden.`;
   } else hint = "\nEine Lagerart kannst du später unter Stammdaten zuweisen.";
-  const text = `Kopie „${r.datei || name}“ angelegt${r.lagerart ? ` und der Lagerart „${r.lagerart}“ zugewiesen` : ""}.`
+  const text = `Kopie „${r.datei || name}“ als ${r.art === "box" ? "Box-Label" : "Bauteil-Label"} angelegt${r.lagerart ? ` und der Lagerart „${r.lagerart}“ zugewiesen` : ""}.`
     + `\nSie ist jetzt im P-touch Editor geöffnet${r.csv ? ` (mit Beispieldaten ${fname(r.csv)} verknüpft)` : ""}.` + hint;
   if (TW && document.getElementById("m-tw")) msg("#m-tw", text); else msg("#m-tpl", text);
 }

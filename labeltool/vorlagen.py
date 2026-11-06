@@ -82,8 +82,25 @@ def users(cfg: Config, name: str) -> list[str]:
     return [b.name for b in cfg.box_types.values() if b.lbx == name]
 
 
-def is_box_label(cfg: Config, name: str) -> bool:
-    return bool(cfg.box_template) and name == cfg.box_template
+def is_box_label(cfg: Config, name: str, tpl: lbx.LbxTemplate | None = None) -> bool:
+    """Box-Label oder Bauteil-Label? Festgelegte Art (Stammdaten) vor Zuordnung als Box-Label-Vorlage,
+    sonst am Feld „Lagername“ erkannt (das hat nur das Box-Label)."""
+    kind = cfg.template_kinds.get(name)
+    if kind:
+        return kind == "box"
+    if name in cfg.box_templates():
+        return True
+    if tpl is None:
+        try:
+            tpl = read_template(template_path(cfg, name))
+        except Exception:
+            return False
+    return "Lagername" in tpl.fields
+
+
+def box_label_names(cfg: Config) -> list[str]:
+    """Alle Vorlagen, die Box-Labels sind (für die Auswahl „Box-Label-Vorlage“ der Lagerarten)."""
+    return [p.name for p in list_templates(cfg) if is_box_label(cfg, p.name)]
 
 
 def section_numbers(tpl: lbx.LbxTemplate) -> list[int]:
@@ -100,7 +117,7 @@ def slots_for(cfg: Config, tpl: lbx.LbxTemplate) -> int:
 
 def columns_for(cfg: Config, tpl: lbx.LbxTemplate) -> list[str]:
     """CSV-Spalten, die das Tool für diese Vorlage liefert."""
-    if is_box_label(cfg, tpl.file):
+    if is_box_label(cfg, tpl.file, tpl):
         return list(NAME_COLUMNS)
     return content_columns(slots_for(cfg, tpl))
 
@@ -112,11 +129,13 @@ def warnings(cfg: Config, tpl: lbx.LbxTemplate) -> list[str]:
         out.append("Keine Datenbank-Verknüpfung – im P-touch Editor einmal Datei > Datenbank > "
                    "Verbinden mit einer CSV ausführen und speichern.")
     used_by = users(cfg, name)
-    box_label = is_box_label(cfg, name)
+    box_label = is_box_label(cfg, name, tpl)
     if not used_by and not box_label:
-        out.append("Wird von keiner Lagerart genutzt und ist nicht das Box-Label.")
+        out.append("Wird von keiner Lagerart als Bauteil-Vorlage genutzt.")
+    if box_label and name not in cfg.box_templates():
+        out.append("Box-Label, aber noch keiner Lagerart zugewiesen (Stammdaten > Lagerarten > Box-Label-Vorlage).")
     if box_label and used_by:
-        out.append(f"Ist das Box-Label, wird aber auch als Bauteil-Vorlage genutzt von: {', '.join(used_by)}.")
+        out.append(f"Ist ein Box-Label, wird aber als Bauteil-Vorlage genutzt von: {', '.join(used_by)}.")
     sections = section_numbers(tpl)
     for bt_name in used_by:
         comps = cfg.box_types[bt_name].compartments
@@ -133,7 +152,11 @@ def warnings(cfg: Config, tpl: lbx.LbxTemplate) -> list[str]:
 
 
 def info(cfg: Config, tpl: lbx.LbxTemplate) -> dict:
-    return {"lagerarten": users(cfg, tpl.file), "box_label": is_box_label(cfg, tpl.file),
+    box = is_box_label(cfg, tpl.file, tpl)
+    return {"lagerarten": users(cfg, tpl.file), "box_label": box,
+            "box_lagerarten": [b.name for b in cfg.box_types.values() if b.box_lbx == tpl.file],
+            "box_standard": tpl.file == cfg.box_template,
+            "art": "box" if box else "bauteil", "art_festgelegt": tpl.file in cfg.template_kinds,
             "warnungen": warnings(cfg, tpl)}
 
 
@@ -208,7 +231,7 @@ def sample_worst(cfg: Config, tpl: lbx.LbxTemplate,
     box_type = _longest(list(cfg.box_types) or ["WinBin12"], 1)[0]
     location = f"{abbr}-12.0123"            # zweistellige Abteile
     barcode = f"S{WORST_BOX_ID}"
-    if is_box_label(cfg, tpl.file):
+    if is_box_label(cfg, tpl.file, tpl):
         row = {"ID": WORST_BOX_ID, "Lagername": location, "Barcodeinhalt": barcode, "Lagerinhalt": content,
                "Lagerabteile": "12", "Lagerfarbe": color, "Lagerart": box_type, "Lager-ID": WORST_BOX_ID}
         return cols, [row]
@@ -227,7 +250,7 @@ def sample_worst(cfg: Config, tpl: lbx.LbxTemplate,
 
 def sample_from_box(api: PartDB, cfg: Config, tpl: lbx.LbxTemplate, box: Box) -> tuple[list[str], list[dict]]:
     """Echte Box: Box-Label oder Bauteil-Label mit ALLEN Bauteilen der Box (unabhängig vom Tag)."""
-    if is_box_label(cfg, tpl.file):
+    if is_box_label(cfg, tpl.file, tpl):
         return list(NAME_COLUMNS), name_label_rows([box])
     label = content_label_for_box(api, cfg, box)
     cols = content_columns(max(slots_for(cfg, tpl), label.slots))

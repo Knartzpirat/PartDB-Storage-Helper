@@ -47,9 +47,10 @@ class MasterData:
             "farben": dict(self.cfg.colors),
             "kategorien": {c.key: {"name": c.name, "farbe": c.color}
                            for c in self.cfg.categories.values()},
-            "lagerarten": {b.name: {k: v for k, v in (("abteile", b.compartments),
-                                                       ("datei", b.file), ("lbx", b.lbx)) if v}
+            "lagerarten": {b.name: {k: v for k, v in (("abteile", b.compartments), ("datei", b.file),
+                                                       ("lbx", b.lbx), ("box_vorlage", b.box_lbx)) if v}
                            for b in self.cfg.box_types.values()},
+            "vorlagen_art": dict(sorted(self.cfg.template_kinds.items())),
         }
 
     def _apply(self, data: dict) -> None:
@@ -66,6 +67,9 @@ class MasterData:
         self.cfg.sync_category_colors()
         self.cfg.box_types.clear()
         self.cfg.box_types.update(parse_box_types(data.get("lagerarten") or {}))
+        self.cfg.template_kinds.clear()
+        self.cfg.template_kinds.update({str(k): str(v) for k, v in (data.get("vorlagen_art") or {}).items()
+                                        if v in ("box", "bauteil")})
 
     def _write(self) -> None:
         header = ("# Wird vom Labeltool verwaltet (Reiter \"Stammdaten\").\n"
@@ -118,7 +122,8 @@ class MasterData:
                        for n, h in self.cfg.colors.items()],
             "kategorien": [vars(c) for c in self.cfg.categories.values()],
             "lagerarten": [dict(vars(b), vorlage=vars(self.cfg.template_for(b.name)),
-                                lbx_ok=bool(b.lbx) and (self.cfg.template_dir / b.lbx).is_file())
+                                lbx_ok=bool(b.lbx) and (self.cfg.template_dir / b.lbx).is_file(),
+                                box_lbx_ok=not b.box_lbx or (self.cfg.template_dir / b.box_lbx).is_file())
                            for b in self.cfg.box_types.values()],
             "vorlagen_ordner": str(self.cfg.template_dir),
             "vorlagen": sorted(p.name for p in self.cfg.template_dir.glob("*.lbx"))
@@ -200,15 +205,28 @@ class MasterData:
                                   f"Erst diesen Inhalten eine andere Farbe geben.")
         self._change(f"Boxfarbe '{name}' gelöscht", lambda: self.cfg.colors.pop(name))
 
+    # ------------------------------------------------------------ Art der Vorlagen
+    def set_template_kind(self, name: str, kind: str | None) -> None:
+        """Vorlage als Box-Label ("box") oder Bauteil-Label ("bauteil") festlegen; None = automatisch erkennen."""
+        if kind not in (None, "box", "bauteil"):
+            raise MasterDataError(f"Unbekannte Art '{kind}' – möglich: box, bauteil.")
+        if self.cfg.template_kinds.get(name) == kind:
+            return
+        text = {"box": "Box-Label", "bauteil": "Bauteil-Label", None: "automatisch erkannt"}[kind]
+        kinds = self.cfg.template_kinds
+        self._change(f"Vorlage '{name}': {text}",
+                     lambda: kinds.pop(name, None) if kind is None else kinds.__setitem__(name, kind))
+
     # ------------------------------------------------------------ Lagerarten
     def _check_box_type(self, b: BoxType) -> BoxType:
         b = BoxType(name=b.name.strip(), compartments=int(b.compartments),
-                    file=(b.file or "").strip(), lbx=(b.lbx or "").strip())
+                    file=(b.file or "").strip(), lbx=(b.lbx or "").strip(), box_lbx=(b.box_lbx or "").strip())
         if not b.name or re.search(r"\s", b.name):
             raise MasterDataError("Name der Lagerart darf nicht leer sein und keine Leerzeichen enthalten.")
         if not 1 <= b.compartments <= 99:
             raise MasterDataError("Abteile müssen zwischen 1 und 99 liegen.")
-        for value, ext, what in ((b.file, ".csv", "CSV-Datei"), (b.lbx, ".lbx", "P-touch-Vorlage")):
+        for value, ext, what in ((b.file, ".csv", "CSV-Datei"), (b.lbx, ".lbx", "P-touch-Vorlage"),
+                                 (b.box_lbx, ".lbx", "Box-Label-Vorlage")):
             if value and (not value.lower().endswith(ext) or re.search(r"[\\/:*?\"<>|]", value)):
                 raise MasterDataError(f"{what}: nur ein Dateiname mit Endung {ext}, ohne Ordner.")
         return b

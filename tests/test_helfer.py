@@ -300,7 +300,7 @@ def test_helfer_weg_und_timeout(tmp_path, monkeypatch):
     # Helfer verbunden, antwortet aber nicht
     monkeypatch.setattr(helfer_server, "TIMEOUT_PREVIEW", 0.3)
     monkeypatch.setattr(helfer_server, "TIMEOUT_PRINT", 0.3)
-    with connected(c, kern, ignore={"vorschau", "drucken"}):
+    with connected(c, kern, ignore={"vorschau", "drucken", "drucken_sammel"}):
         r = c.post("/api/vorlagen/PartDB_SMD15.lbx/vorschau", json={"zeile": {"Section1": "LM317"}})
         assert r.status_code == 200 and r.headers["X-Vorschau"] == "skizze"
         r = c.post("/api/name-labels/print")
@@ -467,7 +467,7 @@ def test_druck_pruefen_kopien_und_rollenwechsel(tmp_path):
         c.post("/api/boxes", json={"abbr": "MIC", "compartments": 2, "box_type": "WinBin2", "count": 2})
         info = c.post("/api/druck/pruefen", json={"art": "box"}).json()
         assert info["labels"] == 2 and info["eingelegt"] == "12 mm" and info["passt"] is False
-        assert info["baender"] == [{"band_mm": 24, "vorlagen": ["Layout_Lagerbox_PartDB.lbx"]}]
+        assert info["baender"] == [{"band_mm": 24, "vorlagen": ["Layout_Lagerbox_PartDB.lbx"], "labels": 2}]
         info = c.post("/api/druck/pruefen", json={"art": "nachdruck", "ids": [203, 250]}).json()
         assert info["passt"] is True and info["labels"] == 2 and info["baender"][0]["band_mm"] == 12
         assert c.post("/api/druck/pruefen", json={"art": "fax"}).status_code == 400

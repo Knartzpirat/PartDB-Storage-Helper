@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import re
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -67,11 +68,17 @@ class BoxTypeIn(BaseModel):
     compartments: int = Field(default=1, ge=1, le=99)
     file: str = ""
     lbx: str = ""
+    box_lbx: str = ""               # Box-Label-Vorlage, leer = Standard
 
 
 class PrintOptions(BaseModel):
     kopien: int = Field(default=1, ge=1, le=50)     # Exemplare je Label (direkt hintereinander, ein Auftrag)
     band_gewechselt: bool = False                    # Nutzer hat den Rollenwechsel bestätigt
+    # Druck Band für Band: nur_band=True druckt nur die Labels mit Band band_mm (None = Band unbekannt);
+    # fortsetzen=True: weiterer Schritt desselben Auftrags – „Gedruckt“ gilt dann für alle Schritte
+    nur_band: bool = False
+    band_mm: float | None = None
+    fortsetzen: bool = False
 
 
 class NamePrint(PrintOptions):
@@ -94,11 +101,35 @@ def copies(rows: list[dict], n: int) -> list[dict]:
 
 
 class OpenTemplate(BaseModel):
-    box_type: str | None = None     # None = 24-mm-Box-Label
+    box_type: str | None = None     # None = Box-Label
+    box_vorlage: str | None = None  # Box-Label: diese Vorlage (je Lagerart verschieden), sonst die Standardvorlage
 
 
 class ExportOptions(BaseModel):
     open_template: bool = False     # nach dem Schreiben die verknüpfte Vorlage öffnen
+    sortierung: str = "standard"    # Reihenfolge der Zeilen, s. SORTS
+
+
+# Reihenfolge der Zeilen beim CSV-Export (je Box); bei Gleichstand nach Boxname
+SORTS = {
+    "standard": None,                                        # Reihenfolge der Liste
+    "name": lambda b: (),
+    "lagerart": lambda b: (b.box_type.lower(),),
+    "inhalt": lambda b: (b.content.lower(),),
+    "farbe": lambda b: (b.color.lower(),),
+}
+
+
+def _natural(text: str) -> list:
+    return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", text)]
+
+
+def sort_boxes(items: list, how: str, box=lambda x: x) -> list:
+    """items (Boxen oder Labels mit .box) in der gewünschten Reihenfolge."""
+    if how not in SORTS:
+        raise HTTPException(400, f"Unbekannte Sortierung '{how}' – möglich: {', '.join(SORTS)}.")
+    key = SORTS[how]
+    return list(items) if key is None else sorted(items, key=lambda x: (*key(box(x)), _natural(box(x).name)))
 
 
 class SampleSource(BaseModel):
@@ -122,6 +153,11 @@ class TemplateCopy(BaseModel):
     quelle: str                     # vorhandene .lbx
     name: str                       # neuer Dateiname (.lbx)
     lagerart: str | None = None     # optional dieser Lagerart zuweisen
+    art: str | None = None          # "box" = Box-Label, "bauteil" = Bauteil-Label, None = wie die Quelle
+
+
+class TemplateKind(BaseModel):
+    art: str | None = None          # "box" | "bauteil" | None (= automatisch erkennen)
 
 
 def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
@@ -207,7 +243,9 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
 
     @app.exception_handler(bpac.BpacError)
     async def _bpac_error(_, exc: bpac.BpacError):
-        return JSONResponse(status_code=400, content={"detail": str(exc)})
+        # „Falsches Band“ prüft b-PAC live vor dem Senden – 409, damit die Seite zum Wechseln auffordert
+        code = 409 if str(exc).startswith("Falsches Band") else 400
+        return JSONResponse(status_code=code, content={"detail": str(exc)})
 
     @app.exception_handler(httpx.HTTPError)
     async def _http_error(_, exc: httpx.HTTPError):
@@ -268,17 +306,20 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
         return {"ok": True}
 
     # ------------------------------------------------------------- P-touch-Vorlagen
-    def template_target(box_type: str | None) -> tuple[str, Path]:
+    def template_target(box_type: str | None, box_vorlage: str | None = None) -> tuple[str, Path]:
         """(.lbx-Name, CSV-Pfad) für das Box-Label (None) oder eine Lagerart."""
         if box_type is None:
-            return cfg.box_template, cfg.output_dir / cfg.name_label_file
+            lbx = box_vorlage or cfg.box_template
+            if box_vorlage and box_vorlage not in cfg.box_templates():
+                raise HTTPException(400, f"'{box_vorlage}' ist keiner Lagerart als Box-Label-Vorlage zugewiesen.")
+            return lbx, cfg.output_dir / cfg.box_label_csv(lbx)
         bt = cfg.box_types.get(box_type)
         if bt is None:
             raise HTTPException(400, f"Unbekannte Lagerart '{box_type}'.")
         return bt.lbx, cfg.output_dir / cfg.template_for(box_type).file
 
-    def open_template(box_type: str | None) -> str:
-        lbx, csv_path = template_target(box_type)
+    def open_template(box_type: str | None, box_vorlage: str | None = None) -> str:
+        lbx, csv_path = template_target(box_type, box_vorlage)
         if not lbx:
             what = "das Box-Label (labels.box_vorlage in config.yaml)" if box_type is None \
                 else f"Lagerart '{box_type}' (Reiter Stammdaten)"
@@ -291,12 +332,12 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
     def tape_info(templates) -> dict:
         """Band der Vorlagen und eingelegtes Band. passt: True/False, None = eingelegtes Band unbekannt."""
         needed: dict[float, list[str]] = {}
-        for t in dict.fromkeys(templates):
-            try:
-                tape = lbx_mod.parse(cfg.template_dir / t).tape_mm
-            except Exception:
-                tape = None
-            needed.setdefault(tape, []).append(t)
+        counts: dict[float, int] = {}
+        for t in templates:
+            tape = template_tape(t)
+            if t not in needed.get(tape, []):
+                needed.setdefault(tape, []).append(t)
+            counts[tape] = counts.get(tape, 0) + 1
         band = None
         if isinstance(printer, helfer_server.ModePrinter):
             try:
@@ -309,8 +350,57 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
             loaded = None
         known = [t for t in needed if t]
         passt = None if loaded is None or not known else all(abs(t - loaded) <= 0.5 for t in known)
-        return {"baender": [{"band_mm": t, "vorlagen": v} for t, v in needed.items()],
-                "eingelegt": band, "eingelegt_mm": loaded, "passt": passt}
+        # Reihenfolge für den Druck Band für Band: eingelegtes Band zuerst, dann nach Breite, unbekannt zuletzt
+        same = lambda t: loaded is not None and t is not None and abs(t - loaded) <= 0.5
+        order = sorted(needed, key=lambda t: (not same(t), t is None, t or 0))
+        plan = [{"band_mm": t, "vorlagen": needed[t], "labels": counts[t]} for t in order]
+        start = plan[0]["band_mm"] if plan else None
+        return {"baender": [{"band_mm": t, "vorlagen": v, "labels": counts[t]} for t, v in needed.items()],
+                "eingelegt": band, "eingelegt_mm": loaded, "passt": passt, "plan": plan,
+                "mehrere_baender": len(plan) > 1,
+                # passt das eingelegte Band zum ersten Schritt? (bei einem Band = passt)
+                "passt_start": None if loaded is None or start is None else same(start)}
+
+    def template_tape(name: str):
+        try:
+            return lbx_mod.parse(cfg.template_dir / name).tape_mm
+        except Exception:
+            return None
+
+    def tape_matches(tape, opts) -> bool:
+        """Gehört eine Vorlage mit diesem Band zum gewählten Schritt? Ohne nur_band: immer."""
+        if not getattr(opts, "nur_band", False):
+            return True
+        if opts.band_mm is None or tape is None:
+            return opts.band_mm is None and tape is None
+        return abs(tape - opts.band_mm) <= 0.5
+
+    def print_grouped(by_template: dict[str, list], rows_of, flags: int, opts) -> tuple[list[dict], list]:
+        """Direktdruck nach Vorlage gruppiert: alle Vorlagen eines Bandes in EINEM Druckauftrag (ein Vorlauf,
+        Autocut dazwischen). Mit opts.nur_band nur die Vorlagen dieses Bandes. -> (gedruckt, gedruckte Einträge)."""
+        by_tape: dict[object, list] = {}
+        for lbx in by_template:
+            tape = template_tape(lbx)
+            if tape_matches(tape, opts):
+                by_tape.setdefault(tape, []).append(lbx)
+        printed, done = [], []
+        if not by_tape:
+            return printed, done
+        if not opts.band_gewechselt:     # nach bestätigtem Wechsel prüft b-PAC das Band selbst (live)
+            check_tape([lbx for names in by_tape.values() for lbx in names])
+        batch = getattr(printer, "print_batch", None)
+        kopien = getattr(opts, "kopien", 1)
+        for names in by_tape.values():
+            jobs = [(cfg.template_dir / lbx, copies([rows_of(x) for x in by_template[lbx]], kopien)) for lbx in names]
+            if batch is not None:
+                batch(jobs, cfg.printer, flags)
+            else:   # Drucker-Objekte ohne Sammeldruck (z. B. Test-Attrappen)
+                for path, rows in jobs:
+                    printer.print_labels(path, rows, cfg.printer, flags)
+            for lbx in names:
+                printed.append({"vorlage": lbx, "labels": len(by_template[lbx]) * max(1, kopien)})
+                done.extend(by_template[lbx])
+        return printed, done
 
     def check_tape(templates) -> None:
         """Eingelegtes Band (vom Status des Helfers bzw. lokal) mit den Vorlagen vergleichen – bei
@@ -338,7 +428,7 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
 
     @app.post("/api/templates/open")
     def open_template_endpoint(req: OpenTemplate):
-        return {"vorlage": open_template(req.box_type)}
+        return {"vorlage": open_template(req.box_type, req.box_vorlage)}
 
     # ------------------------------------------------------------- Vorlagen prüfen, Vorschau, bearbeiten
     bpac_errors = tuple({bpac.BpacError, getattr(printer, "BpacError", bpac.BpacError)})
@@ -388,8 +478,17 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
         out["quelle"] = quelle
         return out
 
+    @app.put("/api/vorlagen/{datei}/art")
+    def template_kind(datei: str, req: TemplateKind):
+        """Vorlage als Box-Label oder Bauteil-Label festlegen – steuert Beispieldaten und Auswahllisten."""
+        vorlagen.template_path(cfg, datei)          # gibt es die Vorlage?
+        master.set_template_kind(datei, req.art)
+        return vorlagen.detail(cfg, vorlagen.read_template(vorlagen.template_path(cfg, datei)))
+
     @app.post("/api/vorlagen/kopie")
     def template_copy(req: TemplateCopy):
+        if req.art not in (None, "box", "bauteil"):
+            raise HTTPException(400, f"Unbekannte Art '{req.art}' – möglich: box, bauteil.")
         bt = None
         if req.lagerart:
             bt = cfg.box_types.get(req.lagerart)
@@ -404,12 +503,16 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
             except Exception:
                 target.unlink(missing_ok=True)
                 raise
+        art = req.art or ("box" if vorlagen.is_box_label(cfg, req.quelle) else "bauteil")
+        master.set_template_kind(target.name, art)
         if bt is not None:   # über die Stammdaten, damit es rückgängig gemacht werden kann
-            master.save_box_type(bt.name, BoxType(name=bt.name, compartments=bt.compartments,
-                                                  file=bt.file, lbx=target.name))
+            box = art == "box"
+            master.save_box_type(bt.name, BoxType(name=bt.name, compartments=bt.compartments, file=bt.file,
+                                                  lbx=bt.lbx if box else target.name,
+                                                  box_lbx=target.name if box else bt.box_lbx))
         path, cols, rows = sample(target.name, "worst", None)
         opened = vorlagen.edit_original(cfg, path, cols, rows, desktop)
-        return {"datei": target.name, "lagerart": bt.name if bt else None,
+        return {"datei": target.name, "lagerart": bt.name if bt else None, "art": art,
                 "vorlage": opened["vorlage"], "csv": opened["csv"]}
 
     @app.get("/api/vorlagen/{datei}")
@@ -437,12 +540,12 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
 
     @app.get("/api/name-labels/{box_id}/vorschau")
     def name_label_preview(box_id: int):
-        if not cfg.box_template:
-            raise HTTPException(400, "Keine Box-Label-Vorlage (labels.box_vorlage) eingetragen.")
-        path = vorlagen.template_path(cfg, cfg.box_template)
         with api() as c:
             box = load_box(c, box_id)
-        return preview_response(path, name_label_rows([box])[0])
+        template = cfg.box_template_for(box.box_type)
+        if not template:
+            raise HTTPException(400, "Keine Box-Label-Vorlage eingetragen (labels.box_vorlage bzw. bei der Lagerart).")
+        return preview_response(vorlagen.template_path(cfg, template), name_label_rows([box])[0])
 
     @app.get("/api/content-labels/{box_id}/vorschau")
     def content_label_preview(box_id: int):
@@ -457,59 +560,63 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
         return preview_response(path, row)
 
     # ------------------------------------------------------------- Stammdaten
+    def stammdaten() -> dict:
+        """Stammdaten + welche Vorlagen Box-Labels sind (getrennte Auswahllisten bei den Lagerarten)."""
+        return dict(master.info(), box_vorlagen=vorlagen.box_label_names(cfg))
+
     @app.get("/api/stammdaten")
     def master_info():
-        return master.info()
+        return stammdaten()
 
     @app.post("/api/stammdaten/kategorien")
     def add_category(req: CategoryIn):
         master.save_category(None, Category(**req.model_dump()))
-        return master.info()
+        return stammdaten()
 
     @app.put("/api/stammdaten/kategorien/{key}")
     def edit_category(key: str, req: CategoryIn):
         master.save_category(key, Category(**req.model_dump()))
-        return master.info()
+        return stammdaten()
 
     @app.delete("/api/stammdaten/kategorien/{key}")
     def delete_category(key: str):
         master.delete_category(key)
-        return master.info()
+        return stammdaten()
 
     @app.post("/api/stammdaten/farben")
     def add_color(req: ColorIn):
         master.save_color(None, req.name, req.hex)
-        return master.info()
+        return stammdaten()
 
     @app.put("/api/stammdaten/farben/{name}")
     def edit_color(name: str, req: ColorIn):
         master.save_color(name, req.name, req.hex)
-        return master.info()
+        return stammdaten()
 
     @app.delete("/api/stammdaten/farben/{name}")
     def delete_color(name: str):
         master.delete_color(name)
-        return master.info()
+        return stammdaten()
 
     @app.post("/api/stammdaten/lagerarten")
     def add_box_type(req: BoxTypeIn):
         master.save_box_type(None, BoxType(**req.model_dump()))
-        return master.info()
+        return stammdaten()
 
     @app.put("/api/stammdaten/lagerarten/{name}")
     def edit_box_type(name: str, req: BoxTypeIn):
         master.save_box_type(name, BoxType(**req.model_dump()))
-        return master.info()
+        return stammdaten()
 
     @app.delete("/api/stammdaten/lagerarten/{name}")
     def delete_box_type(name: str):
         master.delete_box_type(name)
-        return master.info()
+        return stammdaten()
 
     @app.post("/api/stammdaten/undo")
     def undo_master():
         text = master.undo_last()
-        return dict(master.info(), rueckgaengig_gemacht=text)
+        return dict(stammdaten(), rueckgaengig_gemacht=text)
 
     # ------------------------------------------------------------- Boxen
     @app.get("/api/boxes")
@@ -696,12 +803,20 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
         selected = [boxes[i] for i in state.data["name_queue"] if i in boxes]
         if not selected:
             raise HTTPException(400, "Keine Boxen in der Warteschlange.")
-        path = write_csv(cfg.output_dir / cfg.name_label_file, NAME_COLUMNS, name_label_rows(selected), cfg)
+        selected = sort_boxes(selected, opts.sortierung if opts else "standard")
+        groups: dict[str, list] = {}
+        for b in selected:     # je Box-Label-Vorlage eine CSV (die Vorlage ist mit genau einer CSV verknüpft)
+            groups.setdefault(cfg.box_template_for(b.box_type), []).append(b)
+        files = []
+        for lbx, group in groups.items():
+            path = write_csv(cfg.output_dir / cfg.box_label_csv(lbx), NAME_COLUMNS, name_label_rows(group), cfg)
+            files.append({"datei": str(path), "vorlage": lbx, "labels": len(group), "boxen": [b.name for b in group]})
         state.set("last_name_export", [b.id for b in selected])
-        result = {"datei": str(path), "labels": len(selected), "boxen": [b.name for b in selected]}
-        if opts and opts.open_template:
+        result = {"datei": files[0]["datei"], "dateien": files, "labels": len(selected),
+                  "boxen": [b.name for b in selected]}
+        if opts and opts.open_template and len(files) == 1:   # mehrere Vorlagen: die Seite öffnet sie einzeln
             try:   # CSV ist geschrieben – ein Vorlagenproblem soll das nicht als Fehler melden
-                result["vorlage"] = open_template(None)
+                result["vorlage"] = open_template(None, files[0]["vorlage"] or None)
             except TemplateError as e:
                 result["vorlage_fehler"] = str(e)
         return result
@@ -710,8 +825,6 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
     def print_names(opts: NamePrint | None = None):
         opts = opts or NamePrint()
         flags = require_direct_print()
-        if not cfg.box_template:
-            raise HTTPException(400, "Keine Box-Label-Vorlage (labels.box_vorlage) eingetragen.")
         with api() as c:
             boxes = load_boxes(c)
         queue = state.data["name_queue"]
@@ -721,27 +834,37 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
         if not selected:
             raise HTTPException(400, "Keine Boxen in der Warteschlange." if opts.ids is None
                                 else "Die gewählten Boxen sind nicht (mehr) in der Warteschlange.")
-        if not opts.band_gewechselt:
-            check_tape([cfg.box_template])
-        n = printer.print_labels(cfg.template_dir / cfg.box_template,
-                                 copies(name_label_rows(selected), opts.kopien), cfg.printer, flags)
-        ids = [b.id for b in selected]
-        if opts.ids is not None:     # Nachdruck fehlender: „Gedruckt ✓“ gilt weiter für den ganzen Druck
+        by_template: dict[str, list] = {}
+        for b in selected:
+            template = cfg.box_template_for(b.box_type)
+            if not template:
+                raise HTTPException(400, f"Keine Box-Label-Vorlage für {b.name} – labels.box_vorlage oder bei der "
+                                         f"Lagerart '{b.box_type or '–'}' eintragen.")
+            by_template.setdefault(template, []).append(b)
+        printed, done = print_grouped(by_template, lambda b: name_label_rows([b])[0], flags, opts)
+        if not done:
+            raise HTTPException(400, "Keine Box-Labels für dieses Band.")
+        ids = [b.id for b in done]
+        if opts.ids is not None or opts.fortsetzen:   # Nachdruck/weiteres Band: „Gedruckt ✓“ gilt für alles
             ids = list(dict.fromkeys(state.data["last_name_export"] + ids))
         state.set("last_name_export", ids)
-        return {"gedruckt": n, "boxen": [b.name for b in selected],
-                "labels": [{"id": b.id, "name": b.name} for b in selected]}
+        return {"gedruckt": sum(p["labels"] for p in printed), "boxen": [b.name for b in done],
+                "labels": [{"id": b.id, "name": b.name, "vorlage": cfg.box_template_for(b.box_type)} for b in done]}
 
     @app.post("/api/druck/pruefen")
     def print_check(req: PrintCheck):
         """Vor dem Direktdruck: welches Band brauchen die Vorlagen, welches ist eingelegt, wie viele Labels."""
         if req.art == "box":
-            if not cfg.box_template:
-                raise HTTPException(400, "Keine Box-Label-Vorlage (labels.box_vorlage) eingetragen.")
-            queue = state.data["name_queue"]
+            with api() as c:
+                boxes = load_boxes(c)
+            queue = [i for i in state.data["name_queue"] if i in boxes]
             if req.ids:
                 queue = [i for i in queue if i in set(req.ids)]
-            labels, templates, ohne = len(queue), [cfg.box_template], []
+            templates, ohne = [], []
+            for i in queue:
+                t = cfg.box_template_for(boxes[i].box_type)
+                (templates.append(t) if t else ohne.append(boxes[i].name))
+            labels = len(templates)
         elif req.art in ("bauteile", "nachdruck"):
             if req.art == "bauteile":
                 labs = _content_labels()
@@ -808,9 +931,9 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
             "nachdruck": l.box.id in state.data["content_reprint"],  # in der UI wieder entfernbar
         }
 
-    def _print_content(labels, flags: int, kopien: int = 1,
-                       band_gewechselt: bool = False) -> tuple[list[dict], list[str], list]:
-        """Direktdruck je Vorlage. -> (gedruckt, übersprungen, gedruckte Labels)."""
+    def _print_content(labels, flags: int, opts=None) -> tuple[list[dict], list[str], list]:
+        """Direktdruck je Vorlage (opts: PrintOptions). -> (gedruckt, übersprungen, gedruckte Labels)."""
+        opts = opts or PrintOptions()
         by_template: dict[str, list] = {}
         skipped = []
         for l in labels:
@@ -819,32 +942,9 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
                 by_template.setdefault(bt.lbx, []).append(l)
             else:
                 skipped.append(f"{l.box.name} ({l.box.box_type or 'ohne Lagerart'})")
-        printed, done = [], []
         if not by_template:
-            return printed, skipped, done
-        # Alle Vorlagen in EINEM Druckauftrag (ein Vorlauf, Autocut dazwischen) – je Bandbreite,
-        # denn eine Vorlage mit anderer Bandbreite beendet den Auftrag in b-PAC ohnehin.
-        by_tape: dict[object, list] = {}
-        for lbx in by_template:
-            try:
-                tape = lbx_mod.parse(cfg.template_dir / lbx).tape_mm
-            except Exception:
-                tape = None
-            by_tape.setdefault(tape, []).append(lbx)
-        batch = getattr(printer, "print_batch", None)
-        if not band_gewechselt:     # nach bestätigtem Wechsel prüft der Helfer das Band selbst (live)
-            check_tape([lbx for names in by_tape.values() for lbx in names])
-        for names in by_tape.values():
-            jobs = [(cfg.template_dir / lbx, copies([l.row(cfg) for l in by_template[lbx]], kopien))
-                    for lbx in names]
-            if batch is not None:
-                batch(jobs, cfg.printer, flags)
-            else:   # Drucker-Objekte ohne Sammeldruck (z. B. Test-Attrappen)
-                for path, rows in jobs:
-                    printer.print_labels(path, rows, cfg.printer, flags)
-            for lbx in names:
-                printed.append({"vorlage": lbx, "labels": len(by_template[lbx]) * max(1, kopien)})
-                done.extend(by_template[lbx])
+            return [], skipped, []
+        printed, done = print_grouped(by_template, lambda l: l.row(cfg), flags, opts)
         return printed, skipped, done
 
     def label_list(done) -> list[dict]:
@@ -886,7 +986,7 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
             raise HTTPException(404, f"Box(en) nicht (mehr) in Part-DB: {', '.join(map(str, missing))}")
         labels = [make_content_label(cfg, boxes[i], by_location.get(i, [])) for i in dict.fromkeys(req.ids)]
         if req.direkt:
-            printed, skipped, done = _print_content(labels, flags, req.kopien, req.band_gewechselt)
+            printed, skipped, done = _print_content(labels, flags, req)
             return {"gedruckt": printed, "uebersprungen": skipped, "labels": label_list(done)}
         return {"dateien": export_content_labels(labels, cfg), "labels": len(labels)}
 
@@ -913,10 +1013,11 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
         return {"liste": state.data["content_reprint"]}
 
     @app.post("/api/content-labels/export")
-    def content_export():
+    def content_export(opts: ExportOptions | None = None):
         labels = _content_labels()
         if not labels:
             raise HTTPException(400, f"Nichts in der Liste – keine Bauteile mit Tag '{cfg.label_tag}' und kein Nachdruck.")
+        labels = sort_boxes(labels, opts.sortierung if opts else "standard", box=lambda l: l.box)
         written = export_content_labels(labels, cfg)
         part_ids = sorted({pid for l in labels for pid in l.tagged_part_ids})
         state.set("last_content_export", part_ids)
@@ -930,13 +1031,17 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
         labels = _content_labels()
         if not labels:
             raise HTTPException(400, f"Nichts in der Liste – keine Bauteile mit Tag '{cfg.label_tag}' und kein Nachdruck.")
-        printed, skipped, done = _print_content(labels, flags, opts.kopien, opts.band_gewechselt)
+        printed, skipped, done = _print_content(labels, flags, opts)
         part_ids = {pid for l in done for pid in l.tagged_part_ids}
+        reprinted = _reprinted(done)
+        if opts.fortsetzen:     # weiteres Band desselben Auftrags: „Gedruckt“ gilt für alle Bänder
+            part_ids |= set(state.data["last_content_export"])
+            reprinted = list(dict.fromkeys(state.data["last_content_reprint"] + reprinted))
         # Tags/Nachdruck-Einträge erst nach "Gedruckt – Tags entfernen", nur für tatsächlich gedruckte Labels
         state.set("last_content_export", sorted(part_ids))
-        state.set("last_content_reprint", _reprinted(done))
+        state.set("last_content_reprint", reprinted)
         return {"gedruckt": printed, "uebersprungen": skipped, "bauteile": len(part_ids),
-                "nachdruck": len(state.data["last_content_reprint"]), "labels": label_list(done)}
+                "nachdruck": len(reprinted), "labels": label_list(done)}
 
     @app.get("/api/content-labels/offen")
     def content_open():
