@@ -43,7 +43,7 @@ class BoxType:
     compartments: int = 1   # Abteile – Vorbelegung bei "Neue Box" und Felder auf dem Bauteil-Label
     file: str = ""          # CSV der Bauteil-Vorlage, leer = Inhalt_<name>.csv
     lbx: str = ""           # P-touch-Vorlage im Vorlagenordner, z. B. "PartDB_Window-Div-Bin-2.lbx"
-    box_lbx: str = ""       # Box-Label-Vorlage dieser Lagerart, leer = labels.box_vorlage
+    box_lbx: str = ""       # Box-Label-Vorlage dieser Lagerart, leer = Standard-Box-Vorlage (Stammdaten)
 
 
 @dataclass
@@ -107,7 +107,7 @@ class Config:
         return {n: self.template_for(n) for n, b in self.box_types.items() if b.file}
 
     def box_template_for(self, box_type: str) -> str:
-        """Box-Label-Vorlage einer Lagerart – eigene oder die Standardvorlage (labels.box_vorlage)."""
+        """Box-Label-Vorlage einer Lagerart – eigene oder die Standard-Box-Vorlage (Stammdaten)."""
         bt = self.box_types.get(box_type)
         return (bt.box_lbx if bt and bt.box_lbx else "") or self.box_template
 

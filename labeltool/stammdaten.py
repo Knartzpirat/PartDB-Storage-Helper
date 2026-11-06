@@ -51,6 +51,7 @@ class MasterData:
                                                        ("lbx", b.lbx), ("box_vorlage", b.box_lbx)) if v}
                            for b in self.cfg.box_types.values()},
             "vorlagen_art": dict(sorted(self.cfg.template_kinds.items())),
+            "standard_box_vorlage": self.cfg.box_template,
         }
 
     def _apply(self, data: dict) -> None:
@@ -67,6 +68,8 @@ class MasterData:
         self.cfg.sync_category_colors()
         self.cfg.box_types.clear()
         self.cfg.box_types.update(parse_box_types(data.get("lagerarten") or {}))
+        if "standard_box_vorlage" in data:   # ältere Stammdaten: Wert aus config.yaml bleibt (Startwert)
+            self.cfg.box_template = str(data.get("standard_box_vorlage") or "")
         self.cfg.template_kinds.clear()
         self.cfg.template_kinds.update({str(k): str(v) for k, v in (data.get("vorlagen_art") or {}).items()
                                         if v in ("box", "bauteil")})
@@ -129,6 +132,9 @@ class MasterData:
             "vorlagen": sorted(p.name for p in self.cfg.template_dir.glob("*.lbx"))
                         if self.cfg.template_dir.is_dir() else [],
             "standard_felder": self.cfg.default_content_slots,
+            "standard_box_vorlage": self.cfg.box_template,
+            "standard_box_vorlage_ok": not self.cfg.box_template
+                                       or (self.cfg.template_dir / self.cfg.box_template).is_file(),
             "rueckgaengig": self.undo[-1]["text"] if self.undo else None,
             "rueckgaengig_anzahl": len(self.undo),
         }
@@ -204,6 +210,17 @@ class MasterData:
             raise MasterDataError(f"Boxfarbe '{name}' wird noch genutzt von: {', '.join(users)}. "
                                   f"Erst diesen Inhalten eine andere Farbe geben.")
         self._change(f"Boxfarbe '{name}' gelöscht", lambda: self.cfg.colors.pop(name))
+
+    # ------------------------------------------------------------ Standard-Box-Label-Vorlage
+    def set_box_default(self, name: str) -> None:
+        """Box-Label-Vorlage für alle Lagerarten ohne eigene; "" = keine."""
+        name = (name or "").strip()
+        if name and (not name.lower().endswith(".lbx") or re.search(r"[\\/:*?\"<>|]", name)):
+            raise MasterDataError("Standard-Box-Vorlage: nur ein Dateiname mit Endung .lbx, ohne Ordner.")
+        if name == self.cfg.box_template:
+            return
+        cfg = self.cfg
+        self._change(f"Standard-Box-Vorlage: {name or 'keine'}", lambda: setattr(cfg, "box_template", name))
 
     # ------------------------------------------------------------ Art der Vorlagen
     def set_template_kind(self, name: str, kind: str | None) -> None:

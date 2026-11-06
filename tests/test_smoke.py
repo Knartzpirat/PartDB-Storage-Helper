@@ -86,6 +86,7 @@ def make(tmp_path):
     cfg_file = tmp_path / "config.yaml"
     text = (ROOT / "config.example.yaml").read_text(encoding="utf-8")
     text = text.replace('token: ""', 'token: "test"')
+    text = re.sub(r'(?m)^  box_vorlage: ".*?"', '  box_vorlage: "Layout_Lagerbox_PartDB.lbx"', text)
     text = re.sub(r'(?m)^  ordner: ".*"', '  ordner: "out"', text)
     cfg_file.write_text(text, encoding="utf-8")
     # fester Testsatz der Originalvorlagen – der echte Ordner ändert sich im Betrieb

@@ -238,14 +238,16 @@ Vorlagenordner legt `labels.vorlagen_ordner` in `config.yaml` fest.
 2. **Druck-Helfer einrichten** (Docker-Betrieb), siehe oben.
 3. **Stammdaten prüfen:** Inhalte, Lagerarten und Boxfarben an die eigene Lagerhaltung anpassen
    (siehe [Stammdaten](#stammdaten)).
-4. **Vorlagen zuordnen:** Im Reiter *Stammdaten* jeder Lagerart ihre Bauteil-Vorlage zuweisen; die Box-Label-Vorlage
-   steht in `config.yaml` unter `labels.box_vorlage`. Beispiele liegen in [`BeispielEtiketten/`](BeispielEtiketten).
+4. **Vorlagen zuordnen:** Im Reiter *Stammdaten* unter *Lagerarten* die **Standard-Box-Vorlage** wählen (vorbelegt ist
+   keine) und jeder Lagerart ihre Bauteil-Vorlage zuweisen; Lagerarten können auch eine eigene Box-Label-Vorlage
+   bekommen. Ob eine Vorlage ein Box- oder Bauteil-Label ist, lässt sich im Reiter *Vorlagen* festlegen.
+   Beispiele liegen in [`BeispielEtiketten/`](BeispielEtiketten).
 
 ## Arbeitsablauf
 
 | Label | Band (aus der Vorlage) | Vorlage | CSV |
 |---|---|---|---|
-| Box-Label | z. B. 24 mm | `labels.box_vorlage`, z. B. `Layout_Lagerbox_PartDB.lbx` | `Namenslabels.csv` |
+| Box-Label | z. B. 24 mm | Standard-Box-Vorlage oder je Lagerart, z. B. `Layout_Lagerbox_PartDB.lbx` | `Namenslabels.csv` (eigene Vorlage: `Namenslabels_<Vorlage>.csv`) |
 | Bauteil-Label | z. B. 12 mm | je Lagerart, z. B. `PartDB_Window-Div-Bin-2.lbx` | `Inhalt_<Lagerart>.csv` |
 
 **Neue Boxen:** Reiter *Neue Box* → Inhalt und Lagerart wählen (die Abteile kommen aus der Lagerart), Anzahl
@@ -353,7 +355,8 @@ Die meisten Einstellungen sind in der Oberfläche erreichbar und landen in `eins
 | `partdb.url`, `partdb.token`, `partdb.ssl_pruefen` | Part-DB-Verbindung (in der Oberfläche änderbar) |
 | `output.ordner`, `output.encoding`, `output.trennzeichen` | CSV-Ausgabe; erscheinen Umlaute im P-touch Editor falsch, `encoding: cp1252` |
 | `labels.tag` | Part-DB-Tag für „braucht Bauteil-Label“ (Standard `noLabel`) |
-| `labels.vorlagen_ordner`, `labels.box_vorlage` | Ordner der `.lbx`-Vorlagen und Vorlage des Box-Labels |
+| `labels.vorlagen_ordner` | Ordner der `.lbx`-Vorlagen |
+| `labels.box_vorlage` | nur Startwert der Standard-Box-Vorlage für ältere Installationen – gewählt wird sie unter *Stammdaten* |
 | `labels.kategorie_quelle` | `part` = Kategorien der Bauteile, `box` = Inhalt der Box |
 | `labels.trenner` | trennt mehrere Bauteile, Footprints und Kategorien in einem Feld (Standard ` \| `) |
 | `labels.fach_regex` | Muster für die Fachnummer in der Bestandsbeschreibung |

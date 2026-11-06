@@ -25,7 +25,7 @@ labels:
 
   # Volume /vorlagen: P-touch-Vorlagen (.lbx) hier hineinkopieren.
   vorlagen_ordner: "/vorlagen"
-  box_vorlage: "Layout_Lagerbox_PartDB.lbx"     # 24-mm-Box-Label
+  box_vorlage: ""     # Standard-Box-Vorlage – wird in der Oberfläche gewählt (Stammdaten > Lagerarten)
 
 # STARTWERTE – nach dem ersten Start im Reiter "Stammdaten" bearbeiten
 # (gespeichert in stammdaten.yaml, Änderungen hier wirken dann nicht mehr).

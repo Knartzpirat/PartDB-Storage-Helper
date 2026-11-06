@@ -156,3 +156,26 @@ def test_csv_sortierung(tmp_path):
     assert names("inhalt")[:2] == ["MIC-1.0022", "MIC-2.0021"]                          # Microcontroller vor SMD ICs
     assert c.post("/api/name-labels/export", json={"sortierung": "quatsch"}).status_code == 400
     assert c.post("/api/content-labels/export", json={"sortierung": "farbe"}).status_code == 200
+
+
+def test_standard_box_vorlage_waehlbar(tmp_path):
+    c, fake, cfg = make(tmp_path)
+    assert c.get("/api/stammdaten").json()["standard_box_vorlage"] == cfg.box_template   # Startwert aus config.yaml
+    box_template_12mm(cfg)
+    r = c.put("/api/stammdaten/box-vorlage", json={"datei": BOX_12})
+    assert r.status_code == 200 and r.json()["standard_box_vorlage"] == BOX_12 and cfg.box_template == BOX_12
+    assert "standard_box_vorlage: " + BOX_12 in cfg.master_file.read_text(encoding="utf-8")
+    assert c.get("/api/meta").json()["box_vorlage"] == BOX_12
+
+    # keine: Box ohne eigene Vorlage kann kein Box-Label drucken
+    assert c.put("/api/stammdaten/box-vorlage", json={"datei": ""}).json()["standard_box_vorlage"] == ""
+    cfg.direct_print = True
+    box = c.post("/api/boxes", json={"abbr": "MIC", "compartments": 2, "box_type": "WinBin2"}).json()["created"][0]
+    r = c.get(f"/api/name-labels/{box['id']}/vorschau")
+    assert r.status_code == 400 and "Standard-Box-Vorlage" in r.json()["detail"]
+
+    # bleibt nach Neustart (Stammdaten gehen vor config.yaml), Rückgängig stellt sie wieder her
+    c2 = TestClient(create_app(cfg, transport=httpx.MockTransport(fake), opener=lambda p: None))
+    assert c2.get("/api/stammdaten").json()["standard_box_vorlage"] == ""
+    assert c2.post("/api/stammdaten/undo").json()["standard_box_vorlage"] == BOX_12
+    assert c2.put("/api/stammdaten/box-vorlage", json={"datei": "fehlt.lbx"}).status_code == 404

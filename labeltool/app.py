@@ -156,6 +156,10 @@ class TemplateCopy(BaseModel):
     art: str | None = None          # "box" = Box-Label, "bauteil" = Bauteil-Label, None = wie die Quelle
 
 
+class BoxDefault(BaseModel):
+    datei: str = ""                 # Standard-Box-Vorlage, "" = keine
+
+
 class TemplateKind(BaseModel):
     art: str | None = None          # "box" | "bauteil" | None (= automatisch erkennen)
 
@@ -321,7 +325,7 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
     def open_template(box_type: str | None, box_vorlage: str | None = None) -> str:
         lbx, csv_path = template_target(box_type, box_vorlage)
         if not lbx:
-            what = "das Box-Label (labels.box_vorlage in config.yaml)" if box_type is None \
+            what = "das Box-Label (Stammdaten > Lagerarten > Standard-Box-Vorlage)" if box_type is None \
                 else f"Lagerart '{box_type}' (Reiter Stammdaten)"
             raise TemplateError(f"Keine P-touch-Vorlage für {what} eingetragen.")
         if not csv_path.exists():
@@ -544,7 +548,8 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
             box = load_box(c, box_id)
         template = cfg.box_template_for(box.box_type)
         if not template:
-            raise HTTPException(400, "Keine Box-Label-Vorlage eingetragen (labels.box_vorlage bzw. bei der Lagerart).")
+            raise HTTPException(400, "Keine Box-Label-Vorlage gewählt – unter Stammdaten > Lagerarten die "
+                                     "Standard-Box-Vorlage oder bei der Lagerart eine eigene wählen.")
         return preview_response(vorlagen.template_path(cfg, template), name_label_rows([box])[0])
 
     @app.get("/api/content-labels/{box_id}/vorschau")
@@ -611,6 +616,14 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
     @app.delete("/api/stammdaten/lagerarten/{name}")
     def delete_box_type(name: str):
         master.delete_box_type(name)
+        return stammdaten()
+
+    @app.put("/api/stammdaten/box-vorlage")
+    def set_box_default(req: BoxDefault):
+        """Standard-Box-Vorlage für alle Lagerarten ohne eigene Box-Label-Vorlage wählen."""
+        if req.datei:
+            vorlagen.template_path(cfg, req.datei)        # gibt es die Vorlage? sonst 404
+        master.set_box_default(req.datei)
         return stammdaten()
 
     @app.post("/api/stammdaten/undo")
@@ -838,7 +851,7 @@ def create_app(cfg: Config, transport: httpx.BaseTransport | None = None,
         for b in selected:
             template = cfg.box_template_for(b.box_type)
             if not template:
-                raise HTTPException(400, f"Keine Box-Label-Vorlage für {b.name} – labels.box_vorlage oder bei der "
+                raise HTTPException(400, f"Keine Box-Label-Vorlage für {b.name} – Standard-Box-Vorlage oder bei der "
                                          f"Lagerart '{b.box_type or '–'}' eintragen.")
             by_template.setdefault(template, []).append(b)
         printed, done = print_grouped(by_template, lambda b: name_label_rows([b])[0], flags, opts)

@@ -517,6 +517,11 @@
         <input type="search" id="q-types" data-mfilter="type" placeholder="Lagerart oder Vorlage suchen …" aria-label="Lagerarten durchsuchen">
         <button class="btn primary" id="b-type-new">+ Neue Lagerart</button>
       </div>
+      <div class="row" style="margin:4px 0 10px">
+        <label for="s-boxdefault" style="margin:0">Standard-Box-Vorlage</label>
+        <select id="s-boxdefault" style="width:auto"></select>
+        <span class="muted" id="s-boxdefault-hint">für alle Lagerarten ohne eigene Box-Label-Vorlage</span>
+      </div>
       <div class="tablewrap"><table class="compact rtable"><thead><tr><th>Name</th><th>Abteile</th><th>Bauteil-Label-Vorlage</th><th>Box-Label-Vorlage</th><th>CSV-Datei</th><th></th></tr></thead>
         <tbody id="t-types"></tbody></table></div>
       <p class="muted">Abteile = Anzahl Bauteile auf dem Bauteil-Label. Vorlagen kommen aus <span class="mono" id="tpl-dir"></span>.
@@ -1636,6 +1641,8 @@ async function loadMaster() {
 }
 function renderMaster(data) {
   MASTER = data;
+  META.box_vorlage = data.standard_box_vorlage || "";
+  renderBoxDefault();
   META.kategorien = data.kategorien;
   META.boxtypen = data.lagerarten;
   META.farben = data.farben;
@@ -1701,7 +1708,7 @@ function typeEditRow(t) {
     <td data-label="Abteile"><input id="e-comp" type="number" min="1" max="99" value="${t.compartments}" aria-label="Abteile"></td>
     <td data-label="Bauteil-Label-Vorlage"><select id="e-lbx" aria-label="Bauteil-Label-Vorlage"><option value="">– keine –</option>${[...new Set([...MASTER.vorlagen.filter(f => !(MASTER.box_vorlagen || []).includes(f)), t.lbx].filter(Boolean))]
       .map(f => `<option ${f === t.lbx ? "selected" : ""}>${esc(f)}</option>`).join("")}</select></td>
-    <td data-label="Box-Label-Vorlage"><select id="e-boxlbx" aria-label="Box-Label-Vorlage"><option value="">Standard (${esc(META?.box_vorlage || "–")})</option>${[...new Set([...(MASTER.box_vorlagen || []), t.box_lbx].filter(Boolean))]
+    <td data-label="Box-Label-Vorlage"><select id="e-boxlbx" aria-label="Box-Label-Vorlage"><option value="">Standard (${esc(MASTER.standard_box_vorlage || "keine gewählt")})</option>${[...new Set([...(MASTER.box_vorlagen || []), t.box_lbx].filter(Boolean))]
       .map(f => `<option ${f === t.box_lbx ? "selected" : ""}>${esc(f)}</option>`).join("")}</select></td>
     <td data-label="CSV-Datei"><input id="e-file" aria-label="CSV-Datei" value="${esc(t.file)}" placeholder="Inhalt_${esc(t.name || "<Name>")}.csv"></td>${editActions("type")}</tr>`;
 }
@@ -1745,6 +1752,25 @@ function usedBy(kind, key) {
   return BOXES.filter(b => kind === "cat" ? b.abbr === key
     : kind === "color" ? colorKey(b.color) === colorKey(key) : b.box_type === key);
 }
+// Standard-Box-Vorlage: Auswahl aus den Vorlagen, die Box-Labels sind
+function renderBoxDefault() {
+  const cur = MASTER.standard_box_vorlage || "";
+  const names = [...new Set([...(MASTER.box_vorlagen || []), cur].filter(Boolean))];
+  $("#s-boxdefault").innerHTML = `<option value="">– keine gewählt –</option>`
+    + names.map(n => `<option ${n === cur ? "selected" : ""}>${esc(n)}</option>`).join("");
+  $("#s-boxdefault-hint").innerHTML = !cur
+    ? `<span class="warn">Keine gewählt – Lagerarten ohne eigene Box-Label-Vorlage können kein Box-Label drucken.</span>`
+    : MASTER.standard_box_vorlage_ok ? "für alle Lagerarten ohne eigene Box-Label-Vorlage"
+    : `<span class="warn">${esc(cur)} fehlt im Vorlagenordner.</span>`;
+}
+$("#s-boxdefault").onchange = async e => {
+  try {
+    const data = await call("PUT", "/api/stammdaten/box-vorlage", {datei: e.target.value});
+    renderMaster(data);
+    msg("#m-master", `${data.rueckgaengig} – mit „Rückgängig“ oben wiederherstellbar.`);
+  } catch (err) { msg("#m-master", err.message, false); renderBoxDefault(); }
+};
+
 // Löschen ohne Rückfrage – die Stammdaten liegen nur im Tool, „Rückgängig“ stellt sie wieder her
 async function deleteMaster(kind, key) {
   const used = usedBy(kind, key).length;
